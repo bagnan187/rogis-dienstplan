@@ -1,0 +1,8 @@
+ROGIS Dienstplan v6.4.7
+
+- Zufällige zeitlich begrenzte Krankmeldungen (stabil pro Woche, nicht bei jedem Refresh neu)
+- Zufällige Urlaubsanträge für zukünftige Zeiträume
+- Urlaub erst nach Admin-Genehmigung; gesamter Zeitraum wird als Urlaub übernommen
+- Krankmeldungen im Adminbereich als Information / Gelesen
+- 2. Lehrjahr behält vereinzelte Begleitfahrten
+- Keine Zufallsereignisse beim Öffnen historischer Wochen

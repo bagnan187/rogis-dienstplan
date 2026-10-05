@@ -8,7 +8,7 @@ const src = fs.readFileSync(file, 'utf8');
 
 const required = [
   'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek',
-  'ensurePersonnelAutomation','syncFleetFromGoogle','regenerateSingleDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
+  'ensurePersonnelAutomation','ensureRandomStaffEvents','syncFleetFromGoogle','regenerateSingleDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
@@ -40,6 +40,21 @@ for (const [needle, label] of requiredRules) {
   }
 }
 
+
+const absenceRules = [
+  ['random-staff-events:', 'stabile wöchentliche Zufallsereignisse'],
+  ["'Krankmeldung'", 'zufällige Krankmeldungen'],
+  ["'Urlaubswunsch'", 'zufällige Urlaubswünsche'],
+  ['/api/admin/vacation-request/', 'Admin-Genehmigung für Urlaubszeiträume'],
+  ['hash(az.id+dk+"ride-v642")%5!==0', '2. Lehrjahr fährt weiterhin vereinzelt mit'],
+  ['if(rideCount>=2)break', 'Begleitfahrten bleiben pro Tag begrenzt'],
+];
+for (const [needle, label] of absenceRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Abwesenheits-/Azubi-Regel:', label);
+    process.exit(1);
+  }
+}
 
 const specialRules = [
   ['run.tl?"Neumann Reisen":"Breitbau Tours"', 'TL/GR Betreiberzuordnung'],
