@@ -156,3 +156,12 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - Begleitfahrten sind bei normalen Busfahrern und Betriebsleitern möglich.
 - Eigene Busdienste erst nach automatisch terminierter Klasse-D-Prüfung und ab 18 Jahren.
 - 3. Lehrjahr weiterhin selbstständiger Ausbildungsfahrdienst.
+
+
+## v6.4.3 – Wochen- und Tagesgenerierung
+
+- Wochen können weiterhin einzeln nacheinander erzeugt werden.
+- Neuer Button **Nächste Woche erzeugen** erzeugt direkt die Folgewoche und wechselt anschließend dorthin.
+- Im Adminbereich kann ein einzelner Wochentag ausgewählt und **nur dieser Tag neu generiert** werden.
+- Eine Tagesgenerierung erzeugt eine neue aktive Planversion; die anderen sechs Tage bleiben unverändert.
+- Individuelle Mitarbeiterkriterien und der aktuelle Fuhrpark werden auch bei der Tagesgenerierung berücksichtigt.

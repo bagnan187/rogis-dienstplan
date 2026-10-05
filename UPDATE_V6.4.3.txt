@@ -1,0 +1,11 @@
+ROGIS Dienstplan v6.4.3
+
+Neu:
+- Wochenweise Generierung weiterhin möglich
+- Nächste Woche direkt erzeugen
+- Einzelnen Tag gezielt neu generieren
+- Tagesgenerierung erzeugt neue Planversion
+- Andere sechs Tage bleiben dabei unverändert
+- Persönliche Kriterien und aktueller Fuhrpark werden berücksichtigt
+
+Keine neue D1-Migration erforderlich.
