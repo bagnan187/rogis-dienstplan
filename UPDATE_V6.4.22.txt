@@ -1,0 +1,18 @@
+ROGIS Dienstplan v6.4.22
+========================
+
+Änderungen
+- Mehmet Ötegen ergänzt: Busfahrer, Fahrdienst, Mitte, Vollzeit.
+- Login: mehmet.otegen / Erstpasswort Start123.
+- Kein erfundenes Geburtsdatum für Mehmet; bleibt offen.
+- 2. Lehrjahr: In der Klasse-D-Praxis fährt jeder noch nicht selbst fahrberechtigte Azubi werktags bei einem realen ROGIS-Fahrdienst mit.
+- Begleitpersonen: Busfahrer, Reservefahrer/Springer, Teamkoordinator Fahrdienst, Fahrtrainer/Einweiser sowie fahrende Betriebsleiter Transport.
+- Maximal ein Azubi je Fahrerdienst.
+- U18-Regel 06:00–22:00 bleibt bestehen.
+- TL/GR-Fremdleistungen sind als Begleitfahrt ausgeschlossen.
+
+Hinweis
+Bereits gespeicherte Planwochen behalten ihre bisherige Einteilung. Für die neue Azubi-Logik den Tag oder die Woche neu generieren.
+
+D1-Migration
+Keine neue Migration erforderlich.

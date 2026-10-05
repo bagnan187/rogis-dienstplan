@@ -8,7 +8,7 @@ const src = fs.readFileSync(file, 'utf8');
 
 const required = [
   'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek','createPlanDraft',
-  'ensurePersonnelAutomation','ensureRandomStaffEvents','openOmsiDayPayload','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
+  'ensurePersonnelAutomation','ensureRandomStaffEvents','openOmsiDayPayload','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible','secondYearRideMentor'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
@@ -49,12 +49,33 @@ const absenceRules = [
   ['/api/admin/vacation-request/', 'Admin-Genehmigung für Urlaubszeiträume'],
   ['/api/admin/sick-notices/read-all', 'Sammelbutton für Krankmeldungen'],
   ['/api/admin/vacation-requests/approve-all', 'Sammelgenehmigung für Urlaubsanträge'],
-  ['hash(az.id+dk+"ride-v642")%5!==0', '2. Lehrjahr fährt weiterhin vereinzelt mit'],
-  ['if(rideCount>=2)break', 'Begleitfahrten bleiben pro Tag begrenzt'],
+  ['second-year-rides-v6422', '2. Lehrjahr nutzt die neue tägliche Begleitfahrt-Logik'],
+  ['secondYearRideMentor(x.emp)', 'Begleitpersonen werden auf echte Fahrdienst-Mentoren begrenzt'],
+  ['x.segs.every(s=>s.operator==="ROGIS"&&!s.manualVehicle)', 'Azubis fahren nicht auf TL/GR-Fremdleistungen mit'],
 ];
 for (const [needle, label] of absenceRules) {
   if (!src.includes(needle)) {
     console.error('Fehlende Abwesenheits-/Azubi-Regel:', label);
+    process.exit(1);
+  }
+}
+
+for (const obsolete of ['hash(az.id+dk+"ride-v642")%5!==0','if(rideCount>=2)break']) {
+  if (src.includes(obsolete)) {
+    console.error('Veraltete Azubi-Begleitfahrtbegrenzung gefunden:', obsolete);
+    process.exit(1);
+  }
+}
+
+const namedStaffRules = [
+  ['"name":"Mehmet Ötegen"', 'Mehmet Ötegen ist als Mitarbeiter hinterlegt'],
+  ['"position":"Busfahrer","bereich":"Fahrdienst","standort":"Mitte"', 'Mehmet ist als Fahrdienst-Mitarbeiter angelegt'],
+  ['"staffCount":1592', 'Personalstammzahl wurde auf 1592 erhöht'],
+  ['birthDateManualMissing', 'für Mehmet wird kein erfundenes Geburtsdatum erzwungen'],
+];
+for (const [needle, label] of namedStaffRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Mitarbeiterregel:', label);
     process.exit(1);
   }
 }
@@ -231,7 +252,7 @@ for (const [needle, label] of openOmsiRules) {
 // in buildDay (z.B. versehentlich freie Variablen wie "segs") vor dem Deploy erkannt.
 const tmp = path.join(root, 'src', '.validate-index.mjs');
 try {
-  fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS, openOmsiDayPayload };\n');
+  fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS, openOmsiDayPayload, apprenticeTrainingState, secondYearRideMentor };\n');
   const mod = await import(pathToFileURL(tmp).href + `?v=${Date.now()}`);
   const generatedVehicleModels = new Set();
   for (const ds of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']) {
@@ -293,6 +314,31 @@ try {
       }
     }
   }
+  // 2. Lehrjahr: In der Praxisphase muss jeder noch nicht selbst fahrberechtigte Azubi
+  // an einem Werktag als Mitfahrer auf einem echten ROGIS-Fahrdienst landen.
+  const mockTrainees = [
+    {id:'VAL-AZ-1',name:'Test Azubi Eins',first:'Test',last:'Eins',position:'Auszubildende/r Fachkraft im Fahrbetrieb · 2. Lehrjahr',bereich:'Ausbildung',standort:'Mitte',employment:'Ausbildung',hours:39,birthDate:'2008-02-01',startDate:'2025-08-01',apprenticeCohort:2025},
+    {id:'VAL-AZ-2',name:'Test Azubi Zwei',first:'Test',last:'Zwei',position:'Auszubildende/r Fachkraft im Fahrbetrieb · 2. Lehrjahr',bereich:'Ausbildung',standort:'Spryndorf',employment:'Ausbildung',hours:39,birthDate:'2008-03-01',startDate:'2025-08-01',apprenticeCohort:2025},
+    {id:'VAL-AZ-3',name:'Test Azubi Drei',first:'Test',last:'Drei',position:'Auszubildende/r Fachkraft im Fahrbetrieb · 2. Lehrjahr',bereich:'Ausbildung',standort:'Hechem',employment:'Ausbildung',hours:39,birthDate:'2008-04-01',startDate:'2025-08-01',apprenticeCohort:2025},
+  ];
+  mod.DATA.employees.push(...mockTrainees);
+  const rideDate = new Date('2027-02-01T12:00:00Z');
+  const rideResult = mod.buildDay(rideDate, mod.DEFAULT_GENERATION_SETTINGS, mod.DATA.fleet, 'validator-azubi-v6422');
+  const usedMentors = new Set();
+  for (const az of mockTrainees) {
+    const state = mod.apprenticeTrainingState(az, rideDate);
+    if (state.phase !== 'Klasse D · Praxis / Begleitfahrten') throw new Error(`Azubi-Test: ${az.name} ist unerwartet in Phase ${state.phase}`);
+    const segs = rideResult.assignments?.[az.id] || [];
+    if (!segs.length || !segs.every(x => x.trainingRide)) throw new Error(`Azubi-Test: ${az.name} erhielt keine tägliche Begleitfahrt`);
+    const mentorName = segs[0].mentorName;
+    const mentor = mod.DATA.employees.find(e => e.name === mentorName);
+    if (!mentor || !mod.secondYearRideMentor(mentor)) throw new Error(`Azubi-Test: ${az.name} hat unzulässige Begleitperson ${mentorName}`);
+    if (segs.some(x => x.operator !== 'ROGIS' || x.manualVehicle)) throw new Error(`Azubi-Test: ${az.name} wurde auf eine Fremdleistung gesetzt`);
+    if (usedMentors.has(mentorName)) throw new Error(`Azubi-Test: Begleitperson ${mentorName} hat mehr als einen Azubi`);
+    usedMentors.add(mentorName);
+  }
+  mod.DATA.employees.splice(mod.DATA.employees.length - mockTrainees.length, mockTrainees.length);
+
   if (![...generatedVehicleModels].some(x => /C2 G Hybrid/i.test(x))) throw new Error('Wagen-Zufallstest: Mercedes-Benz C2 G Hybrid wurde in der Testwoche nie ausgewählt');
   if (generatedVehicleModels.size < 6) throw new Error(`Wagen-Zufallstest: nur ${generatedVehicleModels.size} unterschiedliche Modelle in der Testwoche`);
 } catch (e) {

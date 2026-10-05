@@ -265,3 +265,13 @@ Neu ist die read-only API `GET /api/openomsi/day?date=YYYY-MM-DD`. Sie liefert a
 - Jede nicht aktive Planversion kann einzeln gelöscht werden.
 - Die aktuell aktive Planversion ist gegen Löschen geschützt und wird niemals durch das Löschen eines alten Entwurfs zurückgesetzt.
 - Die Versionsliste zeigt die Gesamtzahl der gespeicherten Versionen und kennzeichnet aktive bzw. inaktive Versionen deutlich.
+
+
+## v6.4.22 – Mehmet Ötegen & 2. Lehrjahr im Fahrdienst
+
+- **Mehmet Ötegen** ist im Personalstamm ergänzt (Busfahrer, Fahrdienst, Betriebshof Mitte, Vollzeit). Sein Login lautet `mehmet.otegen`; das Erstpasswort bleibt `Start123`. Ein Geburtsdatum wurde absichtlich nicht erfunden und bleibt offen, bis es gepflegt wird.
+- Zweitjährige Azubis in der Phase **Klasse D · Praxis / Begleitfahrten**, die noch nicht selbst fahren dürfen, fahren jetzt an jedem Arbeitstag bei einem realen ROGIS-Fahrdienst mit statt nur vereinzelt.
+- Zulässige Begleitpersonen sind Busfahrer, Reservefahrer/Springer, Teamkoordinator Fahrdienst, Fahrtrainer/Einweiser (Lehrfahrer) sowie die Betriebsleiter Transport, wenn diese selbst einen ROGIS-Fahrdienst fahren.
+- Pro Fahrerdienst fährt weiterhin höchstens ein Azubi mit. U18-Azubis bleiben vollständig auf 06:00–22:00 begrenzt.
+- TL-/GR-Fremdleistungen werden für Azubi-Begleitfahrten nicht verwendet.
+- Bereits gespeicherte Planwochen werden nicht rückwirkend verändert; den betroffenen Tag bzw. die Woche neu generieren.
