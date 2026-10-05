@@ -1,35 +1,37 @@
-# TTData-basierte Ablöse- und Pausenlogik (v5.5)
+# TTData-basierte Ablöse- und Pausenlogik (v5.9)
 
-Grundlage ist der vom Betreiber bereitgestellte OMSI-Ordner `TTData` mit den Tagesfahrplänen `Montag-Freitag.ttl`, `Samstag.ttl` und `Sonn- und Feiertag.ttl` sowie den zugehörigen `.ttp`-Tripdateien.
+Grundlage ist der vom Betreiber bereitgestellte OMSI-Ordner `TTData`. Eine Pause wird nicht in einen weiterfahrenden Umlauf hineinerfunden.
 
-## Ergebnis der Prüfung
+## Ablöseorte
 
-Eine frei erfundene 45-Minuten-Pause "im Umlauf" ist nicht zulässig. Der Bus muss seinen Fahrplan weiterfahren. Eine Pause beim gleichen Umlauf darf nur dann als Pause behandelt werden, wenn zwischen zwei echten Fahrplanfahrten eine ausreichend lange fahrplanmäßige Standzeit vorhanden ist.
+Fahrerablösungen werden nur an betrieblich sinnvollen Hotspots vorgesehen. Der aktuelle feste Hotspot-Pool umfasst insbesondere:
 
-Aus den Fahrplandaten ergeben sich nur wenige solche langen Standzeiten:
+- Fachhochschule
+- Botanischer Garten
+- Nordbahnhof
+- Laupendahl Hauptbahnhof / Hbf/ZOB
+- S-Bahn-Stationen wie Oesdorf S, Germaniaviertel S und Spryndorf S
 
-- Montag-Freitag: 5.592 untersuchte Übergänge; 117 mindestens 30 Minuten, davon nur 33 mindestens 45 Minuten.
-- Samstag: 2.749 untersuchte Übergänge; 92 mindestens 30 Minuten, davon nur 1 mindestens 45 Minuten.
-- Sonn-/Feiertag: 1.920 untersuchte Übergänge; 108 mindestens 30 Minuten, davon nur 4 mindestens 45 Minuten.
+Ein TTData-Schnitt wird nur gesetzt, wenn die ankommende Fahrt und die folgende Fahrt am selben Hotspot anschließen. Wenn in einem sinnvollen Zeitfenster kein Hotspot vorhanden ist, bleibt der Fahrer lieber länger auf dem Umlauf, statt an einer abgelegenen Endstelle künstlich abgelöst zu werden.
 
-Damit sind echte 45-Minuten-Standpausen im selben Umlauf die Ausnahme und dürfen nicht zufällig erzeugt werden.
+## Zwei Umläufe in einem Dienst
 
-## Neue Generationslogik
+Nach dem ersten Fahrblock bleibt der Fahrer am Ablöseort. Die Pause findet dort statt. Ein zweiter Umlauf darf nur übernommen werden, wenn er nach der vorgeschriebenen Pause am **gleichen Ablöseort** beginnt. Ein Wechsel auf einen anderen Stadtteil oder eine andere Endstelle während der Pause wird nicht mehr erzeugt.
 
-- Umläufe werden an echten Tripgrenzen aus TTData geteilt.
-- Ziel ist eine Fahrerablösung ungefähr nach vier Stunden; die Schnittstelle wird auf eine tatsächlich vorhandene End-/Start-Haltestelle gelegt.
-- Ein Fahrer endet am realen Ankunftszeitpunkt seiner letzten Fahrt; der nächste Fahrer übernimmt zur realen Abfahrtszeit der folgenden Fahrt.
-- Ein Fahrer darf zwei Blöcke nur dann selbst übernehmen, wenn die echte Zeitlücke die eingestellte Pausenanforderung erfüllt.
-- Es werden keine künstlichen Pausen mehr in einen durchfahrenden Umlauf eingefügt.
-- Fahrzeug und Umlauf bleiben über die Fahrerablösung erhalten; nur der Fahrer wechselt.
-- Alte Haltestellennamen werden anschließend über die ROGIS-Umbenennungskette auf den aktuellen Namen aufgelöst.
-- Falls ein Umlauf wider Erwarten nicht in TTData gefunden wird, gibt es einen gekennzeichneten Fallback. Die normalen Tagesfahrpläne aus dem gelieferten TTData sind jedoch vollständig den Dienstplan-Umläufen zugeordnet.
+Die Generierung zielt auf einen gesamten Dienst von ungefähr 8 Stunden inklusive Pause. Abweichungen sind erlaubt, wenn TTData, persönliche Verfügbarkeit oder Umlaufabdeckung keine passendere Kombination zulassen.
 
-Die Oberfläche kennzeichnet TTData-basierte Fahrdienstblöcke mit `TTData geprüft`.
+## Betriebshof aus TTData
 
+Der Hof wird aus der ersten Ausrückfahrt des Umlaufs bestimmt:
 
-## Mehrere Umläufe pro Dienst (v5.7)
+- `Ausr_...` → Betriebshof Mitte
+- `AusrS_...` → Betriebshof Spryndorf
+- `AusrH_...` → Betriebshof Hechem
 
-Der Generator versucht nun ausdrücklich, Fahrer nach einem etwa vierstündigen Block abzulösen und ihnen nach einer echten Pause einen anderen Umlauf zuzuweisen. Bevorzugt wird ein Folgeumlauf am selben Ablösepunkt. Die Fahrer des vorherigen und nächsten Abschnitts werden gegenseitig in den Ereignissen genannt.
+Dadurch ist der Fahrer für diesen Tag dem Hof zugeordnet, von dem sein Umlauf ausrückt. Bei einem Dienst mit mehreren ROGIS-Umläufen werden nur Umläufe desselben Betriebshofs miteinander kombiniert.
 
-Eine Pause wird ausschließlich zwischen zwei zugewiesenen Umlaufabschnitten angesetzt. Fahrplanmäßige Standzeiten innerhalb eines Umlaufs zählen nur dann als interne Pause, wenn sie aus TTData nachgewiesen sind.
+## Gegenseitige Ablöseanzeige
+
+Wenn Fahrer A einen Umlauf am Hotspot an Fahrer B übergibt, erhält A den Eintrag „Du wirst von B abgelöst“ und B den Eintrag „Du löst A ab“. Diese Verknüpfung wird nur angelegt, wenn TTData denselben Hotspot bestätigt.
+
+Wenn ein Umlauf endet, ohne dass tatsächlich ein anderer Fahrer übernimmt, wird nicht mehr fälschlich „du wirst abgelöst“ angezeigt, sondern „Umlaufende“.
