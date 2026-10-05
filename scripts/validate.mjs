@@ -46,6 +46,8 @@ const absenceRules = [
   ["'Krankmeldung'", 'zufällige Krankmeldungen'],
   ["'Urlaubswunsch'", 'zufällige Urlaubswünsche'],
   ['/api/admin/vacation-request/', 'Admin-Genehmigung für Urlaubszeiträume'],
+  ['/api/admin/sick-notices/read-all', 'Sammelbutton für Krankmeldungen'],
+  ['/api/admin/vacation-requests/approve-all', 'Sammelgenehmigung für Urlaubsanträge'],
   ['hash(az.id+dk+"ride-v642")%5!==0', '2. Lehrjahr fährt weiterhin vereinzelt mit'],
   ['if(rideCount>=2)break', 'Begleitfahrten bleiben pro Tag begrenzt'],
 ];

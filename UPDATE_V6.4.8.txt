@@ -1,0 +1,6 @@
+ROGIS Dienstplan v6.4.8
+
+- Admin-Button: alle Krankmeldungen gesammelt als gelesen markieren.
+- Admin-Button: alle offenen Urlaubsanträge gesammelt genehmigen.
+- Buttons zeigen die Anzahl offener Meldungen/Anträge und sind deaktiviert, wenn nichts offen ist.
+- Einzelbearbeitung bleibt weiterhin möglich.
