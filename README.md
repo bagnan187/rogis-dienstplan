@@ -226,3 +226,6 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - TL-/GR-Leistungen mit **Wagen manuell nachtragen** werden nicht als ROGIS-Wagen in der Übersicht gezählt.
 - Kennzahlen zeigen Wagen im Einsatz, einsatzfähige ROGIS-Wagen und an diesem Tag nicht eingesetzte Wagen.
 - Keine neue D1-Migration erforderlich.
+
+## v6.4.16
+Wageneinsatz zeigt jeden einsatzfähigen ROGIS-Wagen genau einmal. Nicht eingesetzte Wagen bleiben sichtbar; Fahrerwechsel und Umläufe werden je Wagen zusammengefasst.

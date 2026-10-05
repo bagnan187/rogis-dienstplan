@@ -1,0 +1,8 @@
+ROGIS Dienstplan v6.4.16
+
+- Wageneinsatz zeigt jetzt alle einsatzfähigen ROGIS-Wagen des Tages, auch nicht eingesetzte Wagen.
+- Bei nicht eingesetzten Wagen werden Umlauf, Zeiten, Fahrer, Einsatzort und Linien durchgestrichen dargestellt.
+- Jeder Wagen erscheint nur einmal.
+- Fahrerwechsel werden unter derselben Wagennummer zusammengefasst.
+- Jeder Umlauf wird je Wagen nur einmal angezeigt; doppelte Umlaufzeilen entfallen.
+- Suche berücksichtigt weiterhin Wagen, Modell, Umlauf, Fahrer, Ort und Linien.

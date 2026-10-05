@@ -129,6 +129,9 @@ const vehicleOverviewRules = [
   ['/api/admin/vehicle-day', 'API für Wageneinsätze nach Tag'],
   ['seg.trainingRide', 'Azubi-Mitfahrten werden nicht als eigener Fahrer des Wagens gezählt'],
   ['Wagen manuell nachtragen', 'manuell nachzutragende Fremdwagen werden nicht als ROGIS-Wagen gezählt'],
+  ['byVehicle=new Map()', 'Wageneinsätze werden je Wagen zusammengefasst'],
+  ['row.runs=[...new Set(row.runs)]', 'Umläufe werden je Wagen dedupliziert'],
+  ['used:false,runs:[],drivers:[]', 'nicht eingesetzte Wagen bleiben in der Übersicht'],
 ];
 for (const [needle, label] of vehicleOverviewRules) {
   if (!src.includes(needle)) {
@@ -141,6 +144,8 @@ for (const [needle, label] of [
   ['data-tab="vehicles"', 'Wageneinsatz-Tab'],
   ['id="vehicleDaySelect"', 'Tagesauswahl für Wageneinsatz'],
   ['loadVehicleOverview', 'Frontend-Ladefunktion für Wageneinsatz'],
+  ['if(!r.used)', 'nicht eingesetzte Wagen werden separat dargestellt'],
+  ['Fahrer / Fahrerwechsel', 'Fahrerwechsel werden unter einer Wagennummer gebündelt'],
 ]) {
   if (!publicHtml.includes(needle)) {
     console.error('Fehlende Wageneinsatz-Oberfläche:', label);
