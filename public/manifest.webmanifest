@@ -1,0 +1,14 @@
+{
+  "name": "ROGIS Dienstplan & Disposition",
+  "short_name": "ROGIS Dienstplan",
+  "description": "ROGIS Dienstplan und Disposition",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f3f5f9",
+  "theme_color": "#0b247b",
+  "icons": [
+    {"src":"/assets/ROGIS_Dienstplan_App_192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"/assets/ROGIS_Dienstplan_App_512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
