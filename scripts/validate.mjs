@@ -123,6 +123,31 @@ for (const [needle, label] of vacationReserveRules) {
   }
 }
 
+
+const vehicleOverviewRules = [
+  ['vehicleDayRows', 'Backend für tagesbezogene Wageneinsatz-Übersicht'],
+  ['/api/admin/vehicle-day', 'API für Wageneinsätze nach Tag'],
+  ['seg.trainingRide', 'Azubi-Mitfahrten werden nicht als eigener Fahrer des Wagens gezählt'],
+  ['Wagen manuell nachtragen', 'manuell nachzutragende Fremdwagen werden nicht als ROGIS-Wagen gezählt'],
+];
+for (const [needle, label] of vehicleOverviewRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Wageneinsatz-Regel:', label);
+    process.exit(1);
+  }
+}
+const publicHtml = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+for (const [needle, label] of [
+  ['data-tab="vehicles"', 'Wageneinsatz-Tab'],
+  ['id="vehicleDaySelect"', 'Tagesauswahl für Wageneinsatz'],
+  ['loadVehicleOverview', 'Frontend-Ladefunktion für Wageneinsatz'],
+]) {
+  if (!publicHtml.includes(needle)) {
+    console.error('Fehlende Wageneinsatz-Oberfläche:', label);
+    process.exit(1);
+  }
+}
+
 // Laufzeittest für den reinen Fahrplan-Generator. Damit werden ReferenceErrors
 // in buildDay (z.B. versehentlich freie Variablen wie "segs") vor dem Deploy erkannt.
 const tmp = path.join(root, 'src', '.validate-index.mjs');

@@ -215,3 +215,14 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - Zufällige Urlaubswünsche werden nur erzeugt, wenn das Restkontingent reicht.
 - Pro Betriebshof/Dienstort sind gleichzeitig maximal zwei Reservekräfte zulässig. Früh-/Spätreserve sind standardmäßig 06:00–13:00 und 13:00–21:00 ohne Überlappung.
 - Auch manuell gesetzte Reserve wird auf Konflikte mit bereits eingeteilter Reserve geprüft.
+
+## v6.4.15 – Wageneinsatz nach Tag
+
+- Neuer Admin-Tab **Wageneinsatz** mit frei wählbarem Tag innerhalb der angezeigten Woche.
+- Zeigt nur tatsächlich disponierte ROGIS-Wagen des ausgewählten Tages.
+- Pro Einsatzabschnitt werden Wagen, Modell, Umlauf, Beginn, Ende, Fahrer, Start-/Zielort und Linien angezeigt.
+- Bei Fahrerwechseln erscheint derselbe Wagen mit getrennten Zeitabschnitten und den jeweiligen Fahrern.
+- Azubi-Begleitfahrten werden nicht als eigener Fahrer des Fahrzeugs doppelt gezählt.
+- TL-/GR-Leistungen mit **Wagen manuell nachtragen** werden nicht als ROGIS-Wagen in der Übersicht gezählt.
+- Kennzahlen zeigen Wagen im Einsatz, einsatzfähige ROGIS-Wagen und an diesem Tag nicht eingesetzte Wagen.
+- Keine neue D1-Migration erforderlich.

@@ -1,0 +1,7 @@
+ROGIS Dienstplan v6.4.15
+
+Neu: separater Admin-Tab „Wageneinsatz“.
+Tag auswählen und sehen, welcher ROGIS-Wagen auf welchem Umlauf mit welchem Fahrer von wann bis wann und zwischen welchen Orten unterwegs ist.
+Fahrerwechsel werden als getrennte Einsatzabschnitte angezeigt.
+Nur tatsächlich disponierte ROGIS-Wagen werden gelistet; TL/GR mit manuell nachzutragendem Wagen werden nicht als ROGIS-Fahrzeug gezählt.
+Keine neue D1-Migration nötig.
