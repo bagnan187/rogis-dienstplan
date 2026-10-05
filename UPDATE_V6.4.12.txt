@@ -1,0 +1,8 @@
+ROGIS Dienstplan v6.4.12
+
+Änderung:
+- Dienst bearbeiten ist jetzt zuverlässig mit dem aktuell wirksamen Dienst vorausgefüllt.
+- Bereits vorhandene manuelle Änderungen werden mit ihren aktuell angezeigten Werten geöffnet.
+- Generierte Fahrdienste übernehmen Dienstbezeichnung, Dienstort, Beginn und Ende direkt ins Bearbeitungsformular.
+
+Keine neue D1-Migration erforderlich.

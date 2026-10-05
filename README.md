@@ -179,3 +179,22 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - Einzelne Mitarbeiter können nun nicht nur wochenweise, sondern auch für genau einen ausgewählten Tag neu generiert werden.
 - Dabei bleibt der restliche Wochenplan unverändert; bei Fahrdiensten wird nur für diesen Tag mit einem passenden Tauschpartner gearbeitet.
 - Persönliche Kriterien der ausgewählten Person werden auch bei der Tages-Neugenerierung berücksichtigt.
+
+
+## v6.4.10
+
+- Krankmeldungen werden nur noch als aktuelle Krankmeldung erzeugt: Start immer am heutigen Tag, Dauer 1–7 Tage.
+- Keine zufälligen Krankmeldungen mehr Wochen im Voraus.
+- Urlaubswünsche bleiben zukünftige, genehmigungspflichtige Anträge.
+- Pro Kalendertag werden bei der großen Belegschaft nur wenige neue Krankfälle erzeugt und stabil gespeichert.
+
+### Ergänzungen v6.4.10
+- Krankmeldungen beginnen ausschließlich heute und laufen nur die folgenden Tage weiter; alte zukünftige Zufalls-Krankmeldungen werden automatisch bereinigt.
+- Samstag/Sonntag: regulär nur Fahrdienst; alle anderen Bereiche haben frei. Emil Breitbau und Tim Neumann bleiben als fahrende Betriebsleiter für Fahrdienste verfügbar.
+- Dienstkarten von MAN Lion's City/New Lion's City sind wieder anklickbar; Apostrophe im Modellnamen beschädigen das Datenattribut nicht mehr.
+
+## v6.4.12 – Bearbeiten mit aktuellen Werten vorausgefüllt
+
+- Beim Klick auf **Bearbeiten** werden jetzt immer die Werte des aktuell sichtbaren Dienstes in das Formular übernommen.
+- Das gilt auch für bereits manuell geänderte Dienste: Dienstbezeichnung, Dienstort, Beginn, Ende und Notiz werden aus dem wirksamen Tagesdienst übernommen.
+- Dadurch muss nur noch das Feld geändert werden, das tatsächlich angepasst werden soll.
