@@ -1,0 +1,16 @@
+ROGIS Dienstplan v6.1.1 – kumulatives Update
+
+Dieses Update ist ausdrücklich für Installationen gedacht, bei denen v6.0 NICHT installiert wurde.
+Es enthält:
+- v6.0 Personalbewegungen: Einstellungen, Austritte/Rente, Azubis ab 17, Admin-Uebersicht
+- Migration migrations/0004_personnel_lifecycle.sql
+- v6.1: nur individuelle Generationskriterien; ohne gespeicherte Kriterien keine persoenlichen Zeitlimits
+- Login-Fehleranzeige verbessert: statt nur "Fehler" wird der konkrete Server-/HTTP-Fehler angezeigt
+
+Nach dem Entpacken ausfuehren:
+  git add .
+  git commit -m "Kumulatives v6.1.1 Update"
+  git push
+
+Danach einmal:
+  npx wrangler d1 migrations apply rogis-dienstplan-db --remote
