@@ -1,0 +1,4 @@
+ROGIS Dienstplan v6.4.1
+- Personalereignisse zeigen nur Ereignisse des aktuellen Monats (Europe/Berlin).
+- Monatsanzeige enthält immer Monat und Jahr, z. B. Oktober 2026.
+- Ereignistabelle zeigt weiterhin vollständige Datumsangaben mit Jahr.
