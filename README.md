@@ -148,3 +148,11 @@ Ablösungen erfolgen nur an definierten Hotspots, Pausen und Folgeumlauf bleiben
 ## v6.4
 
 Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-Mitfahrten bei Mentoren und ein generationstypisch diversifizierter Personalbestand. Keine neue D1-Migration erforderlich.
+
+
+## v6.4.2 – Ausbildung Klasse D
+- 2. Lehrjahr August bis Dezember: Theorie/Schulungen; ein automatischer MPU-Termin.
+- Ab Januar: Praxis; Begleitfahrten nur vereinzelt und pro Fahrerdienst maximal ein Azubi.
+- Begleitfahrten sind bei normalen Busfahrern und Betriebsleitern möglich.
+- Eigene Busdienste erst nach automatisch terminierter Klasse-D-Prüfung und ab 18 Jahren.
+- 3. Lehrjahr weiterhin selbstständiger Ausbildungsfahrdienst.
