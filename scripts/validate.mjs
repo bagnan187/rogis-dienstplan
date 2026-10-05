@@ -8,7 +8,7 @@ const src = fs.readFileSync(file, 'utf8');
 
 const required = [
   'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek',
-  'ensurePersonnelAutomation','ensureRandomStaffEvents','syncFleetFromGoogle','regenerateSingleDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
+  'ensurePersonnelAutomation','ensureRandomStaffEvents','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
@@ -54,6 +54,19 @@ const absenceRules = [
 for (const [needle, label] of absenceRules) {
   if (!src.includes(needle)) {
     console.error('Fehlende Abwesenheits-/Azubi-Regel:', label);
+    process.exit(1);
+  }
+}
+
+
+const individualDayRules = [
+  ['/api/admin/generate-employee-day', 'API für einzelne Person + einzelnen Tag'],
+  ['employee-day', 'eigener Planversionsmodus für Einzelperson/Tag'],
+  ['übrige sechs Tage unverändert', 'restliche Woche bleibt bei Einzelperson/Tag unverändert'],
+];
+for (const [needle, label] of individualDayRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Einzelperson-Tagesregel:', label);
     process.exit(1);
   }
 }

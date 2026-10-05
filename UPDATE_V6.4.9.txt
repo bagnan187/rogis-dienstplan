@@ -1,0 +1,4 @@
+ROGIS Dienstplan v6.4.9
+
+Neu: Einzelne Person kann für einen einzelnen Wochentag neu generiert werden. Die übrigen sechs Tage bleiben unverändert.
+Keine D1-Migration erforderlich.
