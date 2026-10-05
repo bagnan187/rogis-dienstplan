@@ -1,0 +1,14 @@
+{
+  "name": "rogis-dienstplan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ROGIS Dienstplan & Disposition auf Cloudflare Workers + D1",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "check": "wrangler deploy --dry-run"
+  },
+  "devDependencies": {
+    "wrangler": "^4.102.0"
+  }
+}

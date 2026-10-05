@@ -1,0 +1,21 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "dienstplanung",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-05",
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./public",
+    "run_worker_first": ["/api/*"]
+  },
+  "triggers": {
+    "crons": ["0 16 * * fri"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "rogis-dienstplan-db",
+      "database_id": "PASTE_D1_DATABASE_ID_HERE"
+    }
+  ]
+}
