@@ -244,3 +244,10 @@ Wageneinsatz zeigt jeden einsatzfähigen ROGIS-Wagen genau einmal. Nicht eingese
 - Die bisherigen Zusatzmerkmale `alternative`, `large` und `regio` sperren keine Modellreihen mehr aus der Zufallsauswahl aus. Dadurch können z. B. Mercedes-Benz C2 G Hybrid regulär auf Gelenk-Umläufen erscheinen.
 - Jede konkrete Wagennummer hat innerhalb ihrer Grundbauart dieselbe Auswahlchance; bereits am selben Tag verwendete Wagen werden nicht doppelt vergeben.
 - Eine Neu- oder Tagesgenerierung erzeugt eine neue zufällige Wagenverteilung; ein bereits gespeicherter Plan bleibt stabil.
+
+
+## v6.4.19
+
+- TTData-Platzhalter wie `.........................` werden nicht mehr als echte Linie angezeigt.
+- Gilt auch für bereits gespeicherte Planwochen in der Web-Oberfläche; eine Neugenerierung ist für die reine Anzeige nicht nötig.
+- Neu generierte Dienste speichern solche Platzhalter außerdem nicht mehr in `segment.lines`.

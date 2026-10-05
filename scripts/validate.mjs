@@ -81,6 +81,22 @@ if (!html.includes('Der aktuell vorhandene Dienst ist bereits eingetragen') || !
 }
 
 
+
+const linePlaceholderRules = [
+  ['function isRealServiceLine', 'zentraler Filter für echte Linien'],
+  ['/^[.·_\\-–—\\s]+$/.test(v)', 'Punkt-/Trennzeichen-Platzhalter werden nicht als Linie behandelt'],
+];
+for (const [needle, label] of linePlaceholderRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Linienfilter-Regel:', label);
+    process.exit(1);
+  }
+}
+if (!html.includes('function visibleLines') || !html.includes('visibleLines(s.lines)')) {
+  console.error('Fehlender UI-Fix: TTData-Platzhalter wie "........................." dürfen nicht als Linie angezeigt werden');
+  process.exit(1);
+}
+
 const individualDayRules = [
   ['/api/admin/generate-employee-day', 'API für einzelne Person + einzelnen Tag'],
   ['employee-day', 'eigener Planversionsmodus für Einzelperson/Tag'],
@@ -184,6 +200,9 @@ try {
     for (const info of Object.values(result.runInfo || {})) if (info?.vehicle?.model) generatedVehicleModels.add(info.vehicle.model);
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
+    }
+    for (const segs of Object.values(result.assignments)) for (const seg of segs || []) for (const line of seg.lines || []) {
+      if (/^[.·_\-–—\s]+$/.test(String(line||'').trim())) throw new Error(`Ungültiger TTData-Linienplatzhalter im Plan ${ds}: ${line}`);
     }
     const dd = new Date(`${ds}T12:00:00Z`);
     const reserve = mod.DATA.employees.map(emp => ({emp, st: mod.statusForEmployee(emp, dd, result, mod.DEFAULT_GENERATION_SETTINGS)})).filter(x => x.st.status === 'Reserve');
