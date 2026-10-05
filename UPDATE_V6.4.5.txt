@@ -1,0 +1,11 @@
+ROGIS Dienstplan v6.4.5
+
+- Alle Azubis im 1., 2. und 3. Lehrjahr haben Samstag und Sonntag frei.
+- Azubis unter 18 werden bei Begleitfahrten nur Diensten zugeordnet, die vollständig zwischen 06:00 und 22:00 liegen.
+- Begleitfahrten im 2. Lehrjahr bleiben vereinzelt; pro Fahrerdienst maximal ein Azubi.
+- Begleitfahrten sind auch bei regulären Busfahrern möglich.
+- 3. Lehrjahr: Montag bis Freitag wie normale Busfahrer im regulären Fahrdienst eingeplant; Wochenende frei.
+- 2. Lehrjahr nach bestandener Klasse D und ab 18: regulärer Fahrdienst möglich; Wochenende frei.
+- Validierung prüft die Ausbildungsregeln zusätzlich vor dem Deploy.
+
+Keine neue D1-Migration erforderlich.
