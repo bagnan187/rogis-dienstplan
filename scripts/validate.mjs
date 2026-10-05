@@ -40,6 +40,20 @@ for (const [needle, label] of requiredRules) {
   }
 }
 
+
+const specialRules = [
+  ['run.tl?"Neumann Reisen":"Breitbau Tours"', 'TL/GR Betreiberzuordnung'],
+  ['Wagen manuell nachtragen', 'Sonderumläufe ohne ROGIS-KOM'],
+  ['preferredOperator=emp.name==="Tim Neumann"?"Neumann Reisen":"Breitbau Tours"', 'TL/GR bevorzugen den jeweiligen Leiter; nur Emil/Tim werden geprüft'],
+  ['isSpecialRunSegment', 'Schutz der TL/GR-Umläufe bei Einzel-Neugenerierung'],
+];
+for (const [needle, label] of specialRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Sonderumlauf-Regel:', label);
+    process.exit(1);
+  }
+}
+
 // Laufzeittest für den reinen Fahrplan-Generator. Damit werden ReferenceErrors
 // in buildDay (z.B. versehentlich freie Variablen wie "segs") vor dem Deploy erkannt.
 const tmp = path.join(root, 'src', '.validate-index.mjs');
@@ -50,6 +64,14 @@ try {
     const result = mod.buildDay(new Date(`${ds}T12:00:00Z`));
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
+    }
+    for (const segs of Object.values(result.assignments)) for (const seg of segs || []) {
+      if (seg.tl || seg.gr) {
+        if (!['Emil Breitbau','Tim Neumann'].includes(seg.employeeName)) throw new Error(`Sonderumlauf ${seg.run} an unzulässige Person ${seg.employeeName}`);
+        if (seg.tl && seg.operator !== 'Neumann Reisen') throw new Error(`TL ${seg.run} falscher Betreiber`);
+        if (seg.gr && seg.operator !== 'Breitbau Tours') throw new Error(`GR ${seg.run} falscher Betreiber`);
+        if (seg.vehicle !== 'Wagen manuell nachtragen') throw new Error(`Sonderumlauf ${seg.run} hat unerlaubtes ROGIS-Fahrzeug`);
+      }
     }
   }
 } catch (e) {
