@@ -1,0 +1,8 @@
+ROGIS Dienstplan v6.4.6
+
+- Emil Breitbau und Tim Neumann dürfen auch am Wochenende reguläre Fahrdienste fahren.
+- TL-Umläufe werden ausschließlich Emil/Tim zugeteilt und als Betreiber "Neumann Reisen" geführt. Tim wird bevorzugt, Emil ist Stellvertreter.
+- GR-Umläufe werden ausschließlich Emil/Tim zugeteilt und als Betreiber "Breitbau Tours" geführt. Emil wird bevorzugt, Tim ist Ersatz.
+- Für TL/GR wird niemals ein ROGIS-KOM vergeben. In der Dienstkarte steht "Wagen manuell nachtragen".
+- Einzel-Neugenerierung kann TL/GR nicht an normale Fahrer wegtauschen.
+- Validierung prüft diese Regeln vor Deploy.
