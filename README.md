@@ -71,3 +71,10 @@ Der Fuhrpark wird automatisch alle 30 Minuten, per Admin-Button und vor jeder ne
 Dienstkategorien: 03:00–08:59 Frühdienst, 09:00–12:59 Tagdienst, 13:00–16:59 Spätdienst, ab 17:00 sowie vor 03:00 Nachtdienst. Echte geteilte Dienste bleiben `Geteilter Dienst`.
 
 Haltestellen-Historie wird bis zum aktuellen Namen aufgelöst: `Lütge Varney → Popperstraße → Nordstrander Straße` und `Spielburg → Patermannstraße → Europaviertel`.
+
+### Wochenendregel Büro / Verwaltung
+Klassische Büro- und Verwaltungsbereiche (Geschäftsführung, Betriebsleitung Transport, Außendienst, IT / Digital, Marketing, Personal, Verkehrsplanung und Verwaltung) werden samstags und sonntags automatisch als **Frei** eingeplant. Emil Breitbau und Tim Neumann bleiben als fahrende Betriebsleiter von dieser Büroregel ausgenommen. Operative Schichtbereiche wie Fahrdienst, Leitstelle, Disposition, Werkstatt, Reinigung, Hofdienst und Kundenservice können weiterhin am Wochenende eingeplant werden. Manuelle Admin-Overrides bleiben möglich.
+
+
+## v5.5 – TTData-basierte Ablösung
+Die Fahrdienstgenerierung verwendet nun die echten OMSI-TTData-Tripgrenzen. Künstliche Pausen mitten in weiterfahrenden Umläufen wurden entfernt; Ablösungen werden bevorzugt ungefähr nach vier Stunden an realen Fahrplan-Endpunkten geplant. Details: `docs/TTDATA_PAUSENLOGIK.md`.
