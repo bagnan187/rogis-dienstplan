@@ -1,0 +1,15 @@
+ROGIS Dienstplan v6.3
+
+- nextPlanVersion-Fehler endgültig entfernt: neue interne Funktion getNextPlanVersionV63.
+- Automatische Azubi-Jahrgänge: jährlich zum 01.08., 8 neue Auszubildende.
+- Beim ersten Einsatz werden die drei aktuell benötigten Jahrgänge automatisch angelegt.
+- 1. Lehrjahr: Bereichsrotation + Pkw-Führerscheinausbildung.
+- 2. Lehrjahr: Busführerschein und Mitfahrt bei Lehrfahrern/Betriebsleitern.
+- 3. Lehrjahr: selbstständiger Fahrdienst.
+- Nach 3 Jahren automatische Übernahme als festangestellte/r Busfahrer/in.
+- Rententermin wird automatisch aus dem Geburtsdatum mit Planwert 67 berechnet.
+- Neue automatisch erzeugte Azubis haben ein Geburtsdatum und Start123 als Erstpasswort.
+- Admin-Personalliste mit Lehrjahr, Eintritt, geplantem Rentendatum und Login.
+- Admin kann Passwörter auf Start123 zurücksetzen; aktive Sitzungen werden dabei beendet.
+- Manuelle Neueinstellungs-/Austrittsformulare aus der Oberfläche entfernt.
+- Mobile Personalliste als Kartenansicht ohne horizontales Seiten-Scrollen.
