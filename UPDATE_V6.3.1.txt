@@ -1,0 +1,7 @@
+ROGIS Dienstplan v6.3.1
+
+Hotfix:
+- nextEmployeeId wiederhergestellt. Die Funktion wurde beim v6.3-Umbau versehentlich entfernt.
+- Dadurch scheiterte ensurePersonnelAutomation vor praktisch jedem API-Aufruf; betroffen waren u. a. Fuhrpark-Sync und Plangenerierung.
+- /api/health meldet jetzt Version 6.3.1.
+- nextPlanVersion bleibt vollständig durch getNextPlanVersionV63 ersetzt.
