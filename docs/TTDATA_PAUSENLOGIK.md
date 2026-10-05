@@ -26,3 +26,10 @@ Damit sind echte 45-Minuten-Standpausen im selben Umlauf die Ausnahme und dürfe
 - Falls ein Umlauf wider Erwarten nicht in TTData gefunden wird, gibt es einen gekennzeichneten Fallback. Die normalen Tagesfahrpläne aus dem gelieferten TTData sind jedoch vollständig den Dienstplan-Umläufen zugeordnet.
 
 Die Oberfläche kennzeichnet TTData-basierte Fahrdienstblöcke mit `TTData geprüft`.
+
+
+## Mehrere Umläufe pro Dienst (v5.7)
+
+Der Generator versucht nun ausdrücklich, Fahrer nach einem etwa vierstündigen Block abzulösen und ihnen nach einer echten Pause einen anderen Umlauf zuzuweisen. Bevorzugt wird ein Folgeumlauf am selben Ablösepunkt. Die Fahrer des vorherigen und nächsten Abschnitts werden gegenseitig in den Ereignissen genannt.
+
+Eine Pause wird ausschließlich zwischen zwei zugewiesenen Umlaufabschnitten angesetzt. Fahrplanmäßige Standzeiten innerhalb eines Umlaufs zählen nur dann als interne Pause, wenn sie aus TTData nachgewiesen sind.
