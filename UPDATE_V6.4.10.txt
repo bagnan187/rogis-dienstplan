@@ -1,0 +1,9 @@
+ROGIS Dienstplan v6.4.10
+
+- Krankmeldungen werden ausschließlich am aktuellen Tag erzeugt und gelten ab dann bis zu 7 Tage.
+- Alte automatisch erzeugte Krankmeldungen, deren Beginn noch in der Zukunft liegt, werden automatisch entfernt.
+- Urlaubswünsche dürfen weiterhin für zukünftige Zeiträume gestellt werden und brauchen Admin-Genehmigung.
+- Wochenende: Nur Fahrdienst arbeitet regulär. Werkstatt, Leitstelle, Disposition, Reinigung, Hofdienst, Kundenservice, Verwaltung usw. haben Samstag/Sonntag frei.
+- Emil Breitbau und Tim Neumann dürfen weiterhin am Wochenende Fahrdienste übernehmen.
+- Fix: Dienste mit Fahrzeugmodellen mit Apostroph, insbesondere MAN Lion's City / New Lion's City, sind wieder anklickbar.
+- Keine neue D1-Migration nötig.

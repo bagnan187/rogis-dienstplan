@@ -42,7 +42,8 @@ for (const [needle, label] of requiredRules) {
 
 
 const absenceRules = [
-  ['random-staff-events:', 'stabile wöchentliche Zufallsereignisse'],
+  ['random-sick-events:', 'aktuelle, tagesbezogene Krankmeldungen'],
+  ['requested_date>?', 'alte zukünftige Zufalls-Krankmeldungen werden bereinigt'],
   ["'Krankmeldung'", 'zufällige Krankmeldungen'],
   ["'Urlaubswunsch'", 'zufällige Urlaubswünsche'],
   ['/api/admin/vacation-request/', 'Admin-Genehmigung für Urlaubszeiträume'],
@@ -56,6 +57,23 @@ for (const [needle, label] of absenceRules) {
     console.error('Fehlende Abwesenheits-/Azubi-Regel:', label);
     process.exit(1);
   }
+}
+
+const weekendRules = [
+  ['if(weekend)return{status:"Frei",dutyType:"Frei"', 'am Wochenende arbeitet außerhalb des Fahrdiensts niemand regulär'],
+  ['emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"', 'Emil/Tim bleiben Sonderfall für Wochenend-Fahrdienst'],
+];
+for (const [needle, label] of weekendRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Wochenendregel:', label);
+    process.exit(1);
+  }
+}
+
+const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
+if (!html.includes("replace(/'/g,'%27')")) {
+  console.error('Fehlender UI-Fix: Fahrzeugmodelle mit Apostroph (z.B. Lion\'s City) müssen anklickbar bleiben');
+  process.exit(1);
 }
 
 

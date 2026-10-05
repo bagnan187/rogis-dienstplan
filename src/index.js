@@ -73,7 +73,7 @@ function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=emp
  if(ay===1){if(weekend0)return{status:"Frei",dutyType:"Ausbildung · 1. Lehrjahr",depot:"",serviceTime:"",segments:[]};let rotations=["Werkstatt / Technik","Disposition / Leitstelle","Kundenservice / Verwaltung","Pkw-Führerschein / Fahrschule","Betriebshof / Fahrzeugkunde"],rot=rotations[hash(emp.id+dateKey(mondayOf(d))+"rotation")%rotations.length];return{status:"Ausbildung",dutyType:`1. Lehrjahr · ${rot}`,depot:rot.includes("Fahrschule")?"Betriebshof Mitte":emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
  if(ay===2&&segs.length&&segs.every(x=>x.trainingRide)){let st=segs[0].start,en=Math.max(...segs.map(x=>x.end)),mentor=segs[0].mentorName||"Busfahrer",depot=depotFrom(emp,segs),decor=segs.map((x,i)=>({...x,startTime:minToTime(x.start),endTime:minToTime(x.end),dutyType:"2. Lehrjahr · Begleitfahrt Klasse D",depot,events:[...(i===0?[{type:"Ausbildungsbeginn",time:minToTime(Math.max(0,x.start-10)),location:depot,note:`Vereinzelte Praxisbegleitung bei ${mentor}`}]:[]),{type:"Mitfahrt / Fahrausbildung",time:`${minToTime(x.start)}-${minToTime(x.end)}`,location:x.startLoc,note:`Umlauf ${x.run} · ${x.vehicle} · Begleitperson ${mentor}`},...(i===segs.length-1?[{type:"Ausbildungsende",time:minToTime(x.end),location:x.endLoc}]:[])]}));return{status:"Ausbildung",dutyType:"2. Lehrjahr · Begleitfahrt Klasse D",depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}
  if(ay===2&&!segs.length){let ts=apprenticeTrainingState(emp,d);if(weekend0)return{status:"Frei",dutyType:"Ausbildung · 2. Lehrjahr",depot:"",serviceTime:"",segments:[]};if(ts.phase==="MPU / Eignungsuntersuchung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · MPU / Eignungsuntersuchung",depot:"Betriebshof Mitte",serviceTime:"08:00-12:00",segments:[]};if(ts.phase==="Klasse D · Theorie / Schulungen")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Theorie / Schulungen",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};if(ts.phase==="Klasse D · Prüfung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Prüfung",depot:"Betriebshof Mitte",serviceTime:"08:00-14:00",segments:[]};if(ts.phase==="Klasse D · Praxis / Begleitfahrten")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Praxis / Fahrschule",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D bestanden / Fahrdienstreserve",depot:emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
- if(segs.length){let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end)),decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));if(x.trainingPassengers?.length)x.remarks=`${x.trainingPassengers[0]} fährt als Azubi im 2. Lehrjahr mit.`;x.events=eventize(x,i===0,i===segs.length-1,depot);return x});return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}if(isVacation(emp,d))return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[]};if(isSick(emp,d))return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[]};let dow=d.getUTCDay(),weekend=dow===0||dow===6,h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));if(weekend&&isOfficeWeekendFree(emp)&&emp.name!=="Emil Breitbau"&&emp.name!=="Tim Neumann")return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){if(weekend)return h%100<25?{status:"Reserve",dutyType:"Reserve",depot:"Betriebshof Mitte",serviceTime:`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`,segments:[]}:{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};return h%100<40?{status:"Reserve",dutyType:"Reserve",depot:"Betriebshof Mitte",serviceTime:`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`,segments:[]}:{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}if(emp.name==="Robert Edward Davis")return weekend?{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]}:{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};if(ay===3&&!segs.length){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return weekend?{status:"Frei",dutyType:"Ausbildung · 3. Lehrjahr",depot:"",serviceTime:"",segments:[]}:{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}if(emp.bereich==="Fahrdienst"){let r=h%100;if(r<56)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";if(r<82)return{status:"Reserve",dutyType:"Reserve",depot,serviceTime:h%2?`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`:`${cfg.reserveLateStart||"13:00"}-${cfg.reserveLateEnd||"21:00"}`,segments:[]};if(r<91)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}const shift=["Leitstelle / Verkehrssteuerung","Disposition","Werkstatt / Technik","Reinigung","Hofdienst","Kundenservice / Vertrieb"].includes(emp.bereich);if(weekend&&!shift)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};if(weekend&&shift&&h%100<48)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]}}
+ if(segs.length){let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end)),decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));if(x.trainingPassengers?.length)x.remarks=`${x.trainingPassengers[0]} fährt als Azubi im 2. Lehrjahr mit.`;x.events=eventize(x,i===0,i===segs.length-1,depot);return x});return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}if(isVacation(emp,d))return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[]};if(isSick(emp,d))return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[]};let dow=d.getUTCDay(),weekend=dow===0||dow===6,h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));if(weekend&&isOfficeWeekendFree(emp)&&emp.name!=="Emil Breitbau"&&emp.name!=="Tim Neumann")return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){if(weekend)return h%100<25?{status:"Reserve",dutyType:"Reserve",depot:"Betriebshof Mitte",serviceTime:`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`,segments:[]}:{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};return h%100<40?{status:"Reserve",dutyType:"Reserve",depot:"Betriebshof Mitte",serviceTime:`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`,segments:[]}:{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}if(emp.name==="Robert Edward Davis")return weekend?{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]}:{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};if(ay===3&&!segs.length){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return weekend?{status:"Frei",dutyType:"Ausbildung · 3. Lehrjahr",depot:"",serviceTime:"",segments:[]}:{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}if(emp.bereich==="Fahrdienst"){let r=h%100;if(r<56)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";if(r<82)return{status:"Reserve",dutyType:"Reserve",depot,serviceTime:h%2?`${cfg.reserveEarlyStart||"06:00"}-${cfg.reserveEarlyEnd||"14:00"}`:`${cfg.reserveLateStart||"13:00"}-${cfg.reserveLateEnd||"21:00"}`,segments:[]};if(r<91)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}if(weekend)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]}}
 function generateWeek(monday,version=1,cfg={},fleet=DATA.fleet,seed="",employeeSettings={}){let settings={...DEFAULT_GENERATION_SETTINGS,_seed:seed},days={};for(let i=0;i<7;i++){let d=addDays(monday,i);days[dateKey(d)]=buildDay(d,settings,fleet,seed,employeeSettings)}return{monday:dateKey(monday),generatedAt:new Date().toISOString(),version,seed,settings,employeeSettings:{...employeeSettings},employeeSeeds:{},days}}
 
 function usernameFor(emp){return (emp.first+"."+emp.last).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/ß/g,"ss").replace(/[^a-z0-9]+/g,".").replace(/^\.|\.$/g,"").replace(/\.+/g,".")}
@@ -154,48 +154,75 @@ async function savePlanVersion(env,plan,by,mode="full",note="",activate=true){
 
 async function ensureRandomStaffEvents(env,mondayKey){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(mondayKey))return;
-  // Beim bloßen Öffnen historischer Wochen werden keine nachträglichen Zufallsereignisse erzeugt.
-  const currentMondayKey=dateKey(mondayOf(new Date()));
-  if(mondayKey<currentMondayKey)return;
-  const stateKey=`random-staff-events:${mondayKey}:v647`;
-  const done=await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(stateKey).first();
-  if(done)return;
-  const monday=parseDateKey(mondayKey),active=DATA.employees.filter(e=>employeeActiveOn(e,monday));
+  const today=new Date(),todayKey=dateKey(today),currentMondayKey=dateKey(mondayOf(today));
+  const monday=parseDateKey(mondayKey),active=DATA.employees.filter(e=>employeeActiveOn(e,today));
   if(!active.length)return;
-  const byHash=[...active].sort((a,b)=>hash(`${mondayKey}|staff-event|${a.id}`)-hash(`${mondayKey}|staff-event|${b.id}`));
-  const sickCount=Math.max(4,Math.min(10,Math.round(active.length/180)));
-  const vacationCount=Math.max(2,Math.min(5,Math.round(active.length/400)));
   const now=new Date().toISOString();
+
+  // Bereinige alte, automatisch erzeugte Krankmeldungen aus früheren Versionen,
+  // die fälschlich erst in der Zukunft beginnen. Eine Krankmeldung darf nur ab
+  // dem Tag ihrer Meldung gelten; zukünftige Abwesenheiten gehören in den Urlaub.
+  const obsoleteFutureSick=await env.DB.prepare(`SELECT id,employee_id,requested_date,requested_time FROM objections WHERE type='Krankmeldung' AND requested_date>?`).bind(todayKey).all();
+  for(const r of obsoleteFutureSick.results||[]){
+    let end=/^\d{4}-\d{2}-\d{2}$/.test(String(r.requested_time||''))?r.requested_time:r.requested_date;
+    await env.DB.prepare(`DELETE FROM duty_overrides WHERE employee_id=? AND created_by='system-random' AND kind='Krank' AND duty_date>=? AND duty_date<=?`).bind(r.employee_id,r.requested_date,end).run();
+    await env.DB.prepare(`DELETE FROM objections WHERE id=?`).bind(r.id).run();
+  }
+
+  // Krankmeldungen entstehen nur dann, wenn jemand JETZT krank ist.
+  // Deshalb werden neue Krankfälle ausschließlich für den heutigen Tag erzeugt
+  // und gelten ab heute für einige Tage bis maximal eine Woche. Niemals wird
+  // eine Krankmeldung zwei oder mehr Wochen im Voraus vorgemerkt.
   let sickMade=0;
-  for(const emp of byHash){
-    if(sickMade>=sickCount)break;
-    const h=hash(`${mondayKey}|sick-period|${emp.id}`),startOffset=h%7,duration=1+((h>>>8)%4),start=addDays(monday,startOffset),end=addDays(start,duration-1);
-    // Nicht vorhandene / bereits manuell belegte Tage werden nicht überschrieben.
-    let insertedAny=false;
-    for(let i=0;i<duration;i++){
-      const day=dateKey(addDays(start,i));
-      const r=await env.DB.prepare(`INSERT OR IGNORE INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-        .bind(emp.id,day,'Krank','Krank','','','','Automatisch simulierte Krankmeldung','system-random',now,now).run();
-      if((r?.meta?.changes||0)>0)insertedAny=true;
-    }
-    if(insertedAny){
-      await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?, ?, ?)`)
-        .bind(emp.id,emp.name,dateKey(start),'Krankmeldung',dateKey(end),`Krankmeldung für ${duration} Tag(e) · ${dateKey(start)} bis ${dateKey(end)}.`,'info',now,now).run();
-      sickMade++;
+  if(mondayKey===currentMondayKey){
+    const sickStateKey=`random-sick-events:${todayKey}:v6410`;
+    const sickDone=await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(sickStateKey).first();
+    if(!sickDone){
+      const byHash=[...active].sort((a,b)=>hash(`${todayKey}|sick-now|${a.id}`)-hash(`${todayKey}|sick-now|${b.id}`));
+      const sickCount=2+(hash(`${todayKey}|sick-count`)%5); // 2–6 neue Krankmeldungen an diesem Tag bei >1000 Beschäftigten.
+      for(const emp of byHash){
+        if(sickMade>=sickCount)break;
+        const existingToday=await env.DB.prepare(`SELECT id FROM duty_overrides WHERE employee_id=? AND duty_date=? LIMIT 1`).bind(emp.id,todayKey).first();
+        if(existingToday)continue;
+        const h=hash(`${todayKey}|sick-duration|${emp.id}`),duration=1+(h%7),start=parseDateKey(todayKey),end=addDays(start,duration-1);
+        let insertedAny=false;
+        for(let i=0;i<duration;i++){
+          const day=dateKey(addDays(start,i));
+          const r=await env.DB.prepare(`INSERT OR IGNORE INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+            .bind(emp.id,day,'Krank','Krank','','','','Automatisch simulierte aktuelle Krankmeldung','system-random',now,now).run();
+          if((r?.meta?.changes||0)>0)insertedAny=true;
+        }
+        if(insertedAny){
+          await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?, ?, ?)`)
+            .bind(emp.id,emp.name,todayKey,'Krankmeldung',dateKey(end),`Heute krankgemeldet · voraussichtlich ${duration} Tag(e) · ${todayKey} bis ${dateKey(end)}.`,'info',now,now).run();
+          sickMade++;
+        }
+      }
+      await env.DB.prepare(`INSERT INTO automation_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
+        .bind(sickStateKey,JSON.stringify({sickMade,date:todayKey}),now).run();
     }
   }
+
+  // Urlaubswünsche dürfen dagegen bewusst in der Zukunft liegen und müssen vom Admin genehmigt werden.
+  // Pro Planwoche wird nur eine kleine Anzahl erzeugt, damit die Liste realistisch bleibt.
+  const vacationStateKey=`random-vacation-requests:${mondayKey}:v6410`;
+  const vacationDone=await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(vacationStateKey).first();
   let vacationMade=0;
-  for(const emp of byHash.slice().reverse()){
-    if(vacationMade>=vacationCount)break;
-    const open=await env.DB.prepare(`SELECT id FROM objections WHERE employee_id=? AND type='Urlaubswunsch' AND status='offen' LIMIT 1`).bind(emp.id).first();
-    if(open)continue;
-    const h=hash(`${mondayKey}|vac-request|${emp.id}`),lead=14+(h%57),duration=3+((h>>>8)%8),start=addDays(monday,lead),end=addDays(start,duration-1);
-    await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`)
-      .bind(emp.id,emp.name,dateKey(start),'Urlaubswunsch',dateKey(end),`Automatischer Urlaubswunsch: ${dateKey(start)} bis ${dateKey(end)} (${duration} Tage).`,now,now).run();
-    vacationMade++;
+  if(!vacationDone){
+    const byHash=[...active].sort((a,b)=>hash(`${mondayKey}|vac-event|${a.id}`)-hash(`${mondayKey}|vac-event|${b.id}`));
+    const vacationCount=Math.max(2,Math.min(5,Math.round(active.length/400)));
+    for(const emp of byHash.slice().reverse()){
+      if(vacationMade>=vacationCount)break;
+      const open=await env.DB.prepare(`SELECT id FROM objections WHERE employee_id=? AND type='Urlaubswunsch' AND status='offen' LIMIT 1`).bind(emp.id).first();
+      if(open)continue;
+      const h=hash(`${mondayKey}|vac-request|${emp.id}`),lead=14+(h%57),duration=3+((h>>>8)%8),start=addDays(monday,lead),end=addDays(start,duration-1);
+      await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`)
+        .bind(emp.id,emp.name,dateKey(start),'Urlaubswunsch',dateKey(end),`Automatischer Urlaubswunsch: ${dateKey(start)} bis ${dateKey(end)} (${duration} Tage).`,now,now).run();
+      vacationMade++;
+    }
+    await env.DB.prepare(`INSERT INTO automation_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
+      .bind(vacationStateKey,JSON.stringify({vacationMade,monday:mondayKey}),now).run();
   }
-  await env.DB.prepare(`INSERT INTO automation_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
-    .bind(stateKey,JSON.stringify({sickMade,vacationMade}),now).run();
 }
 
 async function getNextPlanVersionV63(env,mk){let r=await env.DB.prepare(`SELECT MAX(version) v FROM week_plan_versions WHERE monday=?`).bind(mk).first(),active=await env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first();return Math.max(Number(r?.v||0),Number(active?.version||0))+1}
@@ -222,7 +249,7 @@ async function approveVacationRequestById(env,id,username){
 }
 let schemaReadyPromise=null;async function ensureSchemaOnce(env){if(!schemaReadyPromise)schemaReadyPromise=ensureSchema(env).catch(e=>{schemaReadyPromise=null;throw e});return schemaReadyPromise}
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.9",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.10",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/login"&&req.method==="POST"){let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();let emp=EMP_BY_ID.get(u.employee_id);if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);let ls=employeeLifecycleStatus(emp,new Date());if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`})}
  if(p==="/api/logout"&&req.method==="POST"){let tok=cookieToken(req);if(tok)await env.DB.prepare(`DELETE FROM sessions WHERE token=?`).bind(tok).run();return json({ok:true},200,{"set-cookie":"rogis_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"})}
