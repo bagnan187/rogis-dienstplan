@@ -1,0 +1,9 @@
+ROGIS Dienstplan v6.4.14
+
+- Maximal 30 Urlaubstage pro Mitarbeiter und Kalenderjahr.
+- Urlaubsanträge, Sammelgenehmigungen und manuelle Urlaubstage respektieren das Restkontingent.
+- Zufällige Urlaubswünsche werden nur innerhalb des verfügbaren Kontingents erzeugt.
+- Maximal 2 Reservekräfte gleichzeitig am gleichen Betriebshof/Dienstort.
+- Frühreserve 06:00–13:00, Spätreserve 13:00–21:00, damit sich die Schichten nicht gegenseitig auf 4 gleichzeitige Reservekräfte erhöhen.
+- Manuelle Reserve-Einträge werden ebenfalls gegen die 2-Personen-Grenze geprüft.
+- Keine D1-Migration erforderlich.

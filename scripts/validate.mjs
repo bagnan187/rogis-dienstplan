@@ -108,16 +108,45 @@ for (const [needle, label] of specialRules) {
   }
 }
 
+
+const vacationReserveRules = [
+  ['const ANNUAL_VACATION_DAYS=30', '30 Urlaubstage pro Kalenderjahr'],
+  ['vacationCapacityForRange', 'Urlaubsgrenze wird vor Genehmigung geprüft'],
+  ['reserveAcceptedIds', 'Reserve wird zentral begrenzt'],
+  ['if(overlapping<2)accepted.push(c)', 'maximal zwei gleichzeitig überlappende Reservekräfte je Ort'],
+  ['reserveOverrideConflict', 'auch manuelle Reserve-Einträge werden gegen die Grenze geprüft'],
+];
+for (const [needle, label] of vacationReserveRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Urlaubs-/Reserveregel:', label);
+    process.exit(1);
+  }
+}
+
 // Laufzeittest für den reinen Fahrplan-Generator. Damit werden ReferenceErrors
 // in buildDay (z.B. versehentlich freie Variablen wie "segs") vor dem Deploy erkannt.
 const tmp = path.join(root, 'src', '.validate-index.mjs');
 try {
-  fs.writeFileSync(tmp, src + '\nexport { buildDay };\n');
+  fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS };\n');
   const mod = await import(pathToFileURL(tmp).href + `?v=${Date.now()}`);
   for (const ds of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']) {
     const result = mod.buildDay(new Date(`${ds}T12:00:00Z`));
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
+    }
+    const dd = new Date(`${ds}T12:00:00Z`);
+    const reserve = mod.DATA.employees.map(emp => ({emp, st: mod.statusForEmployee(emp, dd, result, mod.DEFAULT_GENERATION_SETTINGS)})).filter(x => x.st.status === 'Reserve');
+    for (const loc of new Set(reserve.map(x => x.st.depot))) {
+      for (let minute=0; minute<1440; minute+=15) {
+        const active = reserve.filter(x => {
+          if (x.st.depot !== loc) return false;
+          const [a,b] = String(x.st.serviceTime||'').split('-');
+          const toMin = z => { const m=String(z||'').match(/^(\d{2}):(\d{2})$/); return m ? Number(m[1])*60+Number(m[2]) : -1; };
+          let start=toMin(a), end=toMin(b); if(end<=start)end+=1440;
+          return start<=minute && minute<end;
+        });
+        if (active.length > 2) throw new Error(`Am ${ds} sind in ${loc} um ${String(Math.floor(minute/60)).padStart(2,'0')}:${String(minute%60).padStart(2,'0')} ${active.length} Reservekräfte gleichzeitig eingeteilt (>2)`);
+      }
     }
     for (const segs of Object.values(result.assignments)) {
       if (segs?.length) {

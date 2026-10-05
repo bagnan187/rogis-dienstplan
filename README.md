@@ -207,3 +207,11 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - Bevorzugt bleiben die bekannten Ablöse-Hotspots; nur wenn sonst ein unzulässig langer Block entstehen würde, greift eine Sicherheitsablösung an einer realen Fahrtgrenze.
 - Individuelle Maximal-Dienstspanne kann höchstens 14 Stunden betragen.
 - Die Validierung prüft alle sieben Wochentage auf diese Grenzen.
+
+
+## v6.4.14 – Urlaubskonto & Reservebegrenzung
+
+- Jeder Mitarbeiter hat maximal 30 Urlaubstage pro Kalenderjahr. Genehmigungen und manuelle Urlaubstage werden gegen das Jahreskontingent geprüft.
+- Zufällige Urlaubswünsche werden nur erzeugt, wenn das Restkontingent reicht.
+- Pro Betriebshof/Dienstort sind gleichzeitig maximal zwei Reservekräfte zulässig. Früh-/Spätreserve sind standardmäßig 06:00–13:00 und 13:00–21:00 ohne Überlappung.
+- Auch manuell gesetzte Reserve wird auf Konflikte mit bereits eingeteilter Reserve geprüft.
