@@ -8,7 +8,7 @@ const src = fs.readFileSync(file, 'utf8');
 
 const required = [
   'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek',
-  'ensurePersonnelAutomation','ensureRandomStaffEvents','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
+  'ensurePersonnelAutomation','ensureRandomStaffEvents','openOmsiDayPayload','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
@@ -188,16 +188,42 @@ for (const [needle, label] of [
   }
 }
 
+
+const openOmsiRules = [
+  ['/api/openomsi/day', 'öffentliche, personenbezogen datenfreie openOMSI-Wagendispositions-API'],
+  ['OPENOMSI_TT_LINE_BY_DAYTYPE', 'Zuordnung Website-Tagtyp zu OMSI-Timetable-Datei'],
+  ['vehicleNumber:String(vehicle.number)', 'Wagennummer wird an openOMSI ausgegeben'],
+  ['info.external||info.manualVehicle||run.tl||run.gr', 'TL/GR und manuelle Fremdwagen werden nicht überschrieben'],
+  ['^TL Tours\\b', 'auch über TTData-AI-Gruppe erkannte TL-Fremdleistungen werden übersprungen'],
+];
+for (const [needle, label] of openOmsiRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende openOMSI-Regel:', label);
+    process.exit(1);
+  }
+}
+
 // Laufzeittest für den reinen Fahrplan-Generator. Damit werden ReferenceErrors
 // in buildDay (z.B. versehentlich freie Variablen wie "segs") vor dem Deploy erkannt.
 const tmp = path.join(root, 'src', '.validate-index.mjs');
 try {
-  fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS };\n');
+  fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS, openOmsiDayPayload };\n');
   const mod = await import(pathToFileURL(tmp).href + `?v=${Date.now()}`);
   const generatedVehicleModels = new Set();
   for (const ds of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']) {
     const result = mod.buildDay(new Date(`${ds}T12:00:00Z`));
     for (const info of Object.values(result.runInfo || {})) if (info?.vehicle?.model) generatedVehicleModels.add(info.vehicle.model);
+    const openOmsi = mod.openOmsiDayPayload({version: 77, days: {[ds]: result}}, ds);
+    const expectedTtLine = ds === '2026-10-10' ? 'Samstag' : ds === '2026-10-11' ? 'Sonn- und Feiertag' : 'Montag-Freitag';
+    if (openOmsi.timetableLine !== expectedTtLine) throw new Error(`openOMSI ${ds}: falsche TTData-Linie ${openOmsi.timetableLine}`);
+    const seenOpenOmsiTours = new Set(), seenOpenOmsiVehicles = new Set();
+    for (const a of openOmsi.assignments || []) {
+      if (!a.tour || !a.vehicleNumber) throw new Error(`openOMSI ${ds}: unvollständige Zuordnung`);
+      if (seenOpenOmsiTours.has(a.tour)) throw new Error(`openOMSI ${ds}: Umlauf ${a.tour} doppelt`);
+      if (seenOpenOmsiVehicles.has(a.vehicleNumber)) throw new Error(`openOMSI ${ds}: KOM ${a.vehicleNumber} doppelt`);
+      if (/(?:^|\s)(?:TL|GR)(?:\s|$)/i.test(a.tour) || /^TL Tours\b/i.test(a.aiGroup||'') || /^Groeger\b/i.test(a.aiGroup||'')) throw new Error(`openOMSI ${ds}: Fremdleistung ${a.tour} wurde nicht herausgefiltert`);
+      seenOpenOmsiTours.add(a.tour); seenOpenOmsiVehicles.add(a.vehicleNumber);
+    }
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
     }

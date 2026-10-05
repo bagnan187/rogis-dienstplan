@@ -1,6 +1,6 @@
 {
   "name": "rogis-dienstplan",
-  "version": "1.6.19",
+  "version": "1.6.20",
   "private": true,
   "description": "ROGIS Dienstplan & Disposition auf Cloudflare Workers + D1",
   "scripts": {

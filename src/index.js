@@ -333,9 +333,35 @@ async function approveVacationRequestById(env,id,username){
   let y=Number(start.slice(0,4)),usedAfter=await vacationDaysUsed(env,o.employee_id,y),remainingAfter=Math.max(0,ANNUAL_VACATION_DAYS-usedAfter);return {ok:true,id,employeeName:o.employee_name,start,end,days:count,remaining:remainingAfter,message:`Urlaub für ${o.employee_name} vom ${start} bis ${end} genehmigt (${count} Tage). Resturlaub ${y}: ${remainingAfter} von ${ANNUAL_VACATION_DAYS} Tagen.`};
 }
 let schemaReadyPromise=null;async function ensureSchemaOnce(env){if(!schemaReadyPromise)schemaReadyPromise=ensureSchema(env).catch(e=>{schemaReadyPromise=null;throw e});return schemaReadyPromise}
+
+const OPENOMSI_TT_LINE_BY_DAYTYPE={WK:"Montag-Freitag",SA:"Samstag",SO:"Sonn- und Feiertag"};
+function openOmsiDayPayload(plan,date){
+ const d=parseDateKey(date),dt=dayType(d),day=plan?.days?.[date];
+ if(!day)throw new Error(`Für ${date} ist im aktiven Wochenplan kein Tag vorhanden.`);
+ const timetableLine=OPENOMSI_TT_LINE_BY_DAYTYPE[dt]||"Montag-Freitag",seenTours=new Set(),assignments=[];
+ for(const [runKey,info] of Object.entries(day.runInfo||{})){
+   const run=info?.run||{};
+   if(!info||info.external||info.manualVehicle||run.tl||run.gr)continue;
+   const vehicle=info.vehicle;
+   if(!vehicle?.number)continue;
+   const sourceRun=String(run.run||runKey||"").trim();
+   const tour=String(TT_ALIASES?.[dt]?.[sourceRun]||sourceRun).trim();
+   if(!tour||seenTours.has(tour))continue;
+   seenTours.add(tour);
+   const tt=TT_SCHEDULE?.[dt]?.[tour]||null,aiGroup=String(tt?.c||run.category||"");
+   /* Manche ältere Planquellen tragen den TL/GR-Zusatz nicht am Run selbst, obwohl der echte TTData-Tourname bzw. die AI-Gruppe eindeutig eine Fremdleistung ist. Für openOMSI niemals einen ROGIS-Wagen auf solche Touren zwingen. */
+   if(/(?:^|\s)(?:TL|GR)(?:\s|$)/i.test(tour)||/^TL Tours\b/i.test(aiGroup)||/^Groeger\b/i.test(aiGroup))continue;
+   const serviceLines=[...new Set((tt?.x||[]).map(x=>ttLine(x?.l)).filter(Boolean))];
+   assignments.push({tour,sourceRun,timetableLine,vehicleNumber:String(vehicle.number),vehicleLabel:vehicle.label||`KOM ${vehicle.number}`,vehicleModel:vehicle.model||"",aiGroup,serviceLines});
+ }
+ assignments.sort((a,b)=>a.tour.localeCompare(b.tour,"de",{numeric:true,sensitivity:"base"}));
+ return{ok:true,date,dayType:dt,timetableLine,planVersion:Number(plan?.version||0),assignmentCount:assignments.length,assignments,note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. TL/GR-Fremdleistungen werden absichtlich nicht überschrieben."};
+}
+
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.19",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.20",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
+ if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/login"&&req.method==="POST"){let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();let emp=EMP_BY_ID.get(u.employee_id);if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);let ls=employeeLifecycleStatus(emp,new Date());if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`})}
  if(p==="/api/logout"&&req.method==="POST"){let tok=cookieToken(req);if(tok)await env.DB.prepare(`DELETE FROM sessions WHERE token=?`).bind(tok).run();return json({ok:true},200,{"set-cookie":"rogis_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"})}
  let su=await sessionUser(req,env);if(!su)return json({error:"Nicht angemeldet."},401);let emp=su.emp;
