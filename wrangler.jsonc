@@ -3,13 +3,20 @@
   "name": "dienstplanung",
   "main": "src/index.js",
   "compatibility_date": "2026-10-05",
-  "observability": { "enabled": true },
+  "observability": {
+    "enabled": true
+  },
   "assets": {
     "directory": "./public",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": [
+      "/api/*"
+    ]
   },
   "triggers": {
-    "crons": ["0 16 * * fri"]
+    "crons": [
+      "*/30 * * * *",
+      "0 16 * * fri"
+    ]
   },
   "d1_databases": [
     {
@@ -17,5 +24,8 @@
       "database_name": "rogis-dienstplan-db",
       "database_id": "df74346c-7fc2-49e4-9bd3-f76dc755337f"
     }
-  ]
+  ],
+  "vars": {
+    "FLEET_SHEET_CSV_URL": "https://docs.google.com/spreadsheets/d/1-fqifc5Edw_zNYoA9j7aP4Gq4JW8EOskuMhJnPkzsec/export?format=csv&gid=0"
+  }
 }
