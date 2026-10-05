@@ -236,3 +236,11 @@ Wageneinsatz zeigt jeden einsatzfähigen ROGIS-Wagen genau einmal. Nicht eingese
 - Wageneinsatz wird jetzt ausschließlich nach Wagennummer sortiert.
 - Eingesetzte und nicht eingesetzte Fahrzeuge bleiben gemeinsam in derselben numerischen Reihenfolge; nicht eingesetzte Wagen werden nicht mehr gesammelt ans Tabellenende verschoben.
 - Fahrerwechsel und Umläufe bleiben weiterhin je Wagennummer zusammengefasst.
+
+
+## v6.4.18
+
+- Fahrzeugdisposition auf der Website neu randomisiert: pro Umlauf wird aus allen einsatzfähigen Wagen der passenden Grundbauart (Solo/Gelenk) zufällig gewählt.
+- Die bisherigen Zusatzmerkmale `alternative`, `large` und `regio` sperren keine Modellreihen mehr aus der Zufallsauswahl aus. Dadurch können z. B. Mercedes-Benz C2 G Hybrid regulär auf Gelenk-Umläufen erscheinen.
+- Jede konkrete Wagennummer hat innerhalb ihrer Grundbauart dieselbe Auswahlchance; bereits am selben Tag verwendete Wagen werden nicht doppelt vergeben.
+- Eine Neu- oder Tagesgenerierung erzeugt eine neue zufällige Wagenverteilung; ein bereits gespeicherter Plan bleibt stabil.

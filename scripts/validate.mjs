@@ -124,6 +124,25 @@ for (const [needle, label] of vacationReserveRules) {
 }
 
 
+
+const fleetRandomRules = [
+  ['vehicleGroupForCategory', 'Fahrzeugzufall unterscheidet nur Solo/Gelenk'],
+  ['fleet-random-v6418', 'neue zufällige Wagenverteilung ist aktiv'],
+  ['v.group===vehicleGroupForCategory(cat)', 'alle einsatzfähigen Modelle derselben Grundbauart dürfen gewählt werden'],
+];
+for (const [needle, label] of fleetRandomRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Wagen-Zufallsregel:', label);
+    process.exit(1);
+  }
+}
+for (const obsolete of ['v.group==="artic"&&!v.alternative','v.group==="solo"&&!v.alternative','v.group==="artic"&&v.alternative','v.group==="solo"&&v.alternative']) {
+  if (src.includes(obsolete)) {
+    console.error('Veraltete Wagenfilterung gefunden:', obsolete);
+    process.exit(1);
+  }
+}
+
 const vehicleOverviewRules = [
   ['vehicleDayRows', 'Backend für tagesbezogene Wageneinsatz-Übersicht'],
   ['/api/admin/vehicle-day', 'API für Wageneinsätze nach Tag'],
@@ -159,8 +178,10 @@ const tmp = path.join(root, 'src', '.validate-index.mjs');
 try {
   fs.writeFileSync(tmp, src + '\nexport { buildDay, statusForEmployee, DATA, DEFAULT_GENERATION_SETTINGS };\n');
   const mod = await import(pathToFileURL(tmp).href + `?v=${Date.now()}`);
+  const generatedVehicleModels = new Set();
   for (const ds of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']) {
     const result = mod.buildDay(new Date(`${ds}T12:00:00Z`));
+    for (const info of Object.values(result.runInfo || {})) if (info?.vehicle?.model) generatedVehicleModels.add(info.vehicle.model);
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
     }
@@ -203,6 +224,8 @@ try {
       }
     }
   }
+  if (![...generatedVehicleModels].some(x => /C2 G Hybrid/i.test(x))) throw new Error('Wagen-Zufallstest: Mercedes-Benz C2 G Hybrid wurde in der Testwoche nie ausgewählt');
+  if (generatedVehicleModels.size < 6) throw new Error(`Wagen-Zufallstest: nur ${generatedVehicleModels.size} unterschiedliche Modelle in der Testwoche`);
 } catch (e) {
   console.error('ROGIS Laufzeit-Smoke-Test fehlgeschlagen:', e?.stack || e);
   process.exit(1);
