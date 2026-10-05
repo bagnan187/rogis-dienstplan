@@ -1,0 +1,10 @@
+ROGIS Dienstplan v6.4.11
+
+- Bearbeiten-Dialog übernimmt jetzt den aktuell generierten Dienst als Ausgangswerte.
+- Fahrdienst ist als manuell bearbeitbare Dienstart verfügbar.
+- Dienstort ist frei editierbar und enthält Vorschläge für ROGIS und Fremdunternehmen.
+- Breitbau Tours: Standort LP-Haarwiehe.
+- Neumann Reisen: Standorte Loogfing, Zweiberg und Kaisertal; TL-Umläufe erhalten passend zum TTData-Umlauf den Standort.
+- TL/GR weiterhin ohne ROGIS-Wagen; Wagen muss manuell nachgetragen werden.
+
+Keine neue D1-Migration erforderlich.

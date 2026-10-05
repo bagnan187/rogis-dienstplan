@@ -75,6 +75,10 @@ if (!html.includes("replace(/'/g,'%27')")) {
   console.error('Fehlender UI-Fix: Fahrzeugmodelle mit Apostroph (z.B. Lion\'s City) müssen anklickbar bleiben');
   process.exit(1);
 }
+if (!html.includes('Der aktuell vorhandene Dienst ist bereits eingetragen') || !html.includes('<option>Fahrdienst</option>')) {
+  console.error('Fehlender UI-Fix: Bearbeiten muss den vorhandenen Dienst vorbefüllen');
+  process.exit(1);
+}
 
 
 const individualDayRules = [
@@ -94,6 +98,8 @@ const specialRules = [
   ['Wagen manuell nachtragen', 'Sonderumläufe ohne ROGIS-KOM'],
   ['preferredOperator=emp.name==="Tim Neumann"?"Neumann Reisen":"Breitbau Tours"', 'TL/GR bevorzugen den jeweiligen Leiter; nur Emil/Tim werden geprüft'],
   ['isSpecialRunSegment', 'Schutz der TL/GR-Umläufe bei Einzel-Neugenerierung'],
+  ['Breitbau Tours · LP-Haarwiehe', 'Standort Breitbau Tours'],
+  ['Neumann Reisen · Zweiberg', 'Standorte Neumann Reisen'],
 ];
 for (const [needle, label] of specialRules) {
   if (!src.includes(needle)) {
@@ -119,6 +125,8 @@ try {
         if (seg.tl && seg.operator !== 'Neumann Reisen') throw new Error(`TL ${seg.run} falscher Betreiber`);
         if (seg.gr && seg.operator !== 'Breitbau Tours') throw new Error(`GR ${seg.run} falscher Betreiber`);
         if (seg.vehicle !== 'Wagen manuell nachtragen') throw new Error(`Sonderumlauf ${seg.run} hat unerlaubtes ROGIS-Fahrzeug`);
+        if (seg.tl && !String(seg.runDepot||'').startsWith('Neumann Reisen · ')) throw new Error(`TL ${seg.run} hat falschen Standort ${seg.runDepot}`);
+        if (seg.gr && seg.runDepot !== 'Breitbau Tours · LP-Haarwiehe') throw new Error(`GR ${seg.run} hat falschen Standort ${seg.runDepot}`);
       }
     }
   }
