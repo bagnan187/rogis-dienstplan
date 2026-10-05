@@ -1,0 +1,8 @@
+ROGIS Dienstplan v6.4.21
+
+- Beliebig viele Planentwürfe pro Woche möglich (keine 5er-Grenze).
+- Neuer Button: Planentwurf erzeugen, ohne ihn zu aktivieren.
+- Nicht aktive Planversionen können einzeln gelöscht werden.
+- Der aktuell aktive Plan kann nicht gelöscht werden und bleibt beim Löschen alter Entwürfe unverändert.
+
+Keine D1-Migration erforderlich.

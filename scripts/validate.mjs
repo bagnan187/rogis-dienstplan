@@ -7,7 +7,7 @@ const file = path.join(root, 'src', 'index.js');
 const src = fs.readFileSync(file, 'utf8');
 
 const required = [
-  'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek',
+  'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek','createPlanDraft',
   'ensurePersonnelAutomation','ensureRandomStaffEvents','openOmsiDayPayload','syncFleetFromGoogle','regenerateSingleDay','regenerateEmployeeDayInPlan','swapEmployeeDutyForDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
@@ -188,6 +188,30 @@ for (const [needle, label] of [
   }
 }
 
+
+
+const planDraftRules = [
+  ['/api/admin/generate-draft', 'separater Endpunkt für nicht aktive Planentwürfe'],
+  ['savePlanVersion(env,plan,by,"draft"', 'Planentwurf wird als eigene Version gespeichert'],
+  ['false);\n  return plan;', 'Planentwurf wird nicht automatisch aktiviert'],
+  ['/api/admin/delete-version', 'einzelne alte Planversionen können gelöscht werden'],
+  ['Version ${ver} ist aktuell aktiv und kann nicht gelöscht werden', 'aktive Planversion ist vor Löschen geschützt'],
+  ['DELETE FROM week_plan_versions WHERE monday=? AND version=?', 'Löschen betrifft nur die gewählte Version'],
+];
+for (const [needle, label] of planDraftRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Planentwurf-Regel:', label);
+    process.exit(1);
+  }
+}
+if (!html.includes('id="generateDraft"') || !html.includes('deletePlanVersion') || !html.includes('beliebig viele Planentwürfe')) {
+  console.error('Fehlende Planentwurf-Oberfläche: unbegrenzt speichern/löschen');
+  process.exit(1);
+}
+if (/week_plan_versions[^`]*LIMIT\s+5/i.test(src)) {
+  console.error('Planversionen dürfen nicht auf fünf Einträge begrenzt sein');
+  process.exit(1);
+}
 
 const openOmsiRules = [
   ['/api/openomsi/day', 'öffentliche, personenbezogen datenfreie openOMSI-Wagendispositions-API'],
