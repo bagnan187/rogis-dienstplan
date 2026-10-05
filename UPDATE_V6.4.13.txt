@@ -1,0 +1,12 @@
+ROGIS Dienstplan v6.4.13
+
+Fix: Zu lange Fahrdienste
+
+- Harte Obergrenze pro Dienst: 14:00 Stunden.
+- Dienste über 10:00 Stunden nur als geteilter Dienst mit mindestens 2:00 Stunden Unterbrechung.
+- Maximaler einzelner Fahrblock: 9:30 Stunden.
+- Lange TTData-Umläufe werden in mehrere reale Fahrblöcke geteilt, statt einer Person 15-24 Stunden am Stück zugeordnet zu werden.
+- Individuelle Einstellung "maximale Dienstspanne" ist ebenfalls auf 14 Stunden begrenzt.
+- Erweiterter Laufzeittest über Montag bis Sonntag.
+
+Keine neue D1-Migration erforderlich.

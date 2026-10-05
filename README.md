@@ -198,3 +198,12 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 - Beim Klick auf **Bearbeiten** werden jetzt immer die Werte des aktuell sichtbaren Dienstes in das Formular übernommen.
 - Das gilt auch für bereits manuell geänderte Dienste: Dienstbezeichnung, Dienstort, Beginn, Ende und Notiz werden aus dem wirksamen Tagesdienst übernommen.
 - Dadurch muss nur noch das Feld geändert werden, das tatsächlich angepasst werden soll.
+
+
+## v6.4.13 – Harte Dienstzeitgrenzen
+- Kein automatisch erzeugter Fahrdienst darf länger als 14 Stunden (840 Minuten) dauern.
+- Dienste über 10 Stunden sind nur noch als echter geteilter Dienst mit mindestens 120 Minuten Unterbrechung zulässig.
+- Ein einzelner Fahrblock ist auf 9:30 Stunden begrenzt; lange OMSI-Umläufe werden an echten TTData-Fahrtgrenzen geteilt.
+- Bevorzugt bleiben die bekannten Ablöse-Hotspots; nur wenn sonst ein unzulässig langer Block entstehen würde, greift eine Sicherheitsablösung an einer realen Fahrtgrenze.
+- Individuelle Maximal-Dienstspanne kann höchstens 14 Stunden betragen.
+- Die Validierung prüft alle sieben Wochentage auf diese Grenzen.

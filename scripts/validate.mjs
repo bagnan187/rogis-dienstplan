@@ -114,12 +114,25 @@ const tmp = path.join(root, 'src', '.validate-index.mjs');
 try {
   fs.writeFileSync(tmp, src + '\nexport { buildDay };\n');
   const mod = await import(pathToFileURL(tmp).href + `?v=${Date.now()}`);
-  for (const ds of ['2026-10-05','2026-10-06','2026-10-10','2026-10-11']) {
+  for (const ds of ['2026-10-05','2026-10-06','2026-10-07','2026-10-08','2026-10-09','2026-10-10','2026-10-11']) {
     const result = mod.buildDay(new Date(`${ds}T12:00:00Z`));
     if (!result || !result.assignments || typeof result.assignments !== 'object') {
       throw new Error(`buildDay(${ds}) liefert keinen gültigen Plan`);
     }
-    for (const segs of Object.values(result.assignments)) for (const seg of segs || []) {
+    for (const segs of Object.values(result.assignments)) {
+      if (segs?.length) {
+        const ordered = [...segs].sort((a,b)=>a.start-b.start);
+        const dutyStart = ordered[0].start;
+        const dutyEnd = Math.max(...ordered.map(x=>x.end));
+        const dutySpan = dutyEnd - dutyStart;
+        if (dutySpan > 840) throw new Error(`Dienst von ${ordered[0].employeeName} am ${ds} ist ${dutySpan} Minuten lang (> 14 h)`);
+        for (const seg of ordered) if (seg.end-seg.start > 570) throw new Error(`Fahrblock ${seg.run} von ${seg.employeeName} ist ${seg.end-seg.start} Minuten lang (> 9:30 h)`);
+        if (dutySpan > 600) {
+          const hasSplit = ordered.slice(1).some((x,i)=>x.start-ordered[i].end>=120);
+          if (!hasSplit) throw new Error(`Dienst von ${ordered[0].employeeName} am ${ds} ist länger als 10 h, aber kein echter Teildienst`);
+        }
+      }
+      for (const seg of segs || []) {
       if (seg.tl || seg.gr) {
         if (!['Emil Breitbau','Tim Neumann'].includes(seg.employeeName)) throw new Error(`Sonderumlauf ${seg.run} an unzulässige Person ${seg.employeeName}`);
         if (seg.tl && seg.operator !== 'Neumann Reisen') throw new Error(`TL ${seg.run} falscher Betreiber`);
@@ -127,6 +140,7 @@ try {
         if (seg.vehicle !== 'Wagen manuell nachtragen') throw new Error(`Sonderumlauf ${seg.run} hat unerlaubtes ROGIS-Fahrzeug`);
         if (seg.tl && !String(seg.runDepot||'').startsWith('Neumann Reisen · ')) throw new Error(`TL ${seg.run} hat falschen Standort ${seg.runDepot}`);
         if (seg.gr && seg.runDepot !== 'Breitbau Tours · LP-Haarwiehe') throw new Error(`GR ${seg.run} hat falschen Standort ${seg.runDepot}`);
+      }
       }
     }
   }
