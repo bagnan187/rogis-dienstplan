@@ -63,3 +63,11 @@ Administratoren können unter **Administration → Generationskriterien** die Di
 Wichtig: Bereits gespeicherte Wochen werden durch eine Änderung der Kriterien **nicht** verändert. Die neuen Kriterien gelten erst bei einer neu erzeugten Woche oder wenn ein Administrator ausdrücklich **Woche neu generieren** auswählt. Die jeweilige Woche speichert eine Kopie der verwendeten Kriterien, damit spätere Änderungen alte Pläne nicht nachträglich verändern.
 
 Umlaufabdeckung hat Vorrang: Falls ein einzelner Umlauf außerhalb eines bevorzugten Start-/Endfensters liegt, bleibt er trotzdem besetzt. Die Grenzen steuern vor allem, welche Umlaufblöcke zu einem gemeinsamen Tagesdienst kombiniert werden.
+
+
+## v5 – Google-Sheets-Fuhrpark
+Der Fuhrpark wird automatisch alle 30 Minuten, per Admin-Button und vor jeder neuen Wochenplan-Generierung aus der Google-Sheets-Tabelle synchronisiert. Nur `Im Betrieb` wird disponiert. Die neue Statusspalte ist K. Ein fehlgeschlagener Sync lässt den letzten D1-Stand unangetastet.
+
+Dienstkategorien: 03:00–08:59 Frühdienst, 09:00–12:59 Tagdienst, 13:00–16:59 Spätdienst, ab 17:00 sowie vor 03:00 Nachtdienst. Echte geteilte Dienste bleiben `Geteilter Dienst`.
+
+Haltestellen-Historie wird bis zum aktuellen Namen aufgelöst: `Lütge Varney → Popperstraße → Nordstrander Straße` und `Spielburg → Patermannstraße → Europaviertel`.
