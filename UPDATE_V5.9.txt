@@ -1,0 +1,9 @@
+ROGIS Dienstplan v5.9
+- Ablösungen nur an definierten Hotspots aus TTData
+- Pause und Folgeumlauf am selben Ablöseort
+- Folgeumlauf nur vom selben Betriebshof
+- Betriebshof aus TTData: Ausr_=Mitte, AusrS_=Spryndorf, AusrH_=Hechem
+- gegenseitige Fahrer-Ablöseanzeige nur bei echtem TTData-Hotspot
+- kein falsches „du wirst abgelöst“ am bloßen Umlaufende
+- Ziel: Dienstspanne möglichst um ca. 8 Stunden; Abweichungen bleiben erlaubt
+Keine neue D1-Migration erforderlich.
