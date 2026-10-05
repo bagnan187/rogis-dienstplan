@@ -1,0 +1,10 @@
+ROGIS Dienstplan v6.2
+
+Fixes:
+- Serverfehler "nextPlanVersion is not defined" behoben.
+- Adminbereich auf Smartphones konsequent einspaltig.
+- Personalbewegungen (Neueinstellung/Austritt) stehen mobil untereinander.
+- Individuelle Kriterien und Admin-Aktionsleisten brechen mobil sauber um.
+- Formulare und Buttons können die Bildschirmbreite nicht mehr aufziehen.
+
+Keine neue D1-Migration erforderlich.
