@@ -1,0 +1,15 @@
+ROGIS Dienstplan v6.1
+
+- Globale Generationskriterien entfernt.
+- Nur individuelle Mitarbeiter-Kriterien wirken als harte Grenzen.
+- Ohne gespeicherte Kriterien: keine persönlichen Zeit-/Fahrzeit-/Dienstspannen-/Blocklimits.
+- Leere individuelle Felder = keine Einschränkung.
+- TTData-Ablöse- und Pausenlogik bleibt bestehen.
+
+Installation im Repo:
+unzip -o ROGIS_Dienstplan_Update_v6.1.zip
+git add .
+git commit -m "Nur persoenliche Generationskriterien"
+git push
+
+Keine neue D1-Migration erforderlich.
