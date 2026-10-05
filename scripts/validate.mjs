@@ -8,7 +8,7 @@ const src = fs.readFileSync(file, 'utf8');
 
 const required = [
   'savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek',
-  'ensurePersonnelAutomation','syncFleetFromGoogle','regenerateSingleDay','buildDay'
+  'ensurePersonnelAutomation','syncFleetFromGoogle','regenerateSingleDay','buildDay','apprenticeWeekendOff','youthWorkWindowAllows','apprenticeOwnDrivingEligible'
 ];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
@@ -23,6 +23,19 @@ const forbidden = [
 for (const [needle, label] of forbidden) {
   if (src.includes(needle)) {
     console.error('Ungültiger Code gefunden:', label);
+    process.exit(1);
+  }
+}
+
+
+const requiredRules = [
+  ['!apprenticeWeekendOff(e,d)', 'Azubis sind aus dem Wochenend-Fahrerpool ausgeschlossen'],
+  ['youthWorkWindowAllows(az,m.segs,d)', 'U18-Begleitfahrten werden auf 06:00-22:00 begrenzt'],
+  ['if(ay>=1&&ay<=3&&weekend0)', 'Alle Lehrjahre haben am Wochenende frei'],
+];
+for (const [needle, label] of requiredRules) {
+  if (!src.includes(needle)) {
+    console.error('Fehlende Ausbildungsregel:', label);
     process.exit(1);
   }
 }
