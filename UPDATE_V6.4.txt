@@ -1,0 +1,12 @@
+ROGIS Dienstplan v6.4
+
+- Personalereignisse und Personalliste im Adminbereich ein-/ausklappbar.
+- Personalereignisse zeigen nur Ereignisse des aktuellen Tages (Europe/Berlin).
+- Datumsanzeige immer mit vierstelligem Jahr.
+- Azubi-Mitfahrt im 2. Lehrjahr wird beim Lehrfahrer/Betriebsleiter als Bemerkung angezeigt.
+- Statischer Personalbestand vollständig neu diversifiziert: keine doppelten vollständigen Namen; Vornamen orientieren sich am Geburtsjahrgang.
+- Automatisch erzeugte Azubi-Namen werden einmalig bereinigt und bleiben ohne Ziffern-Suffixe eindeutig.
+- Bestehende Login-Benutzernamen bleiben erhalten; die Personalliste zeigt den tatsächlich gespeicherten Login.
+- Schutz gegen doppelte Benutzerkonten nach Namensänderungen.
+
+Keine neue D1-Migration erforderlich.
