@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 const file = new URL('../src/index.js', import.meta.url);
 const src = fs.readFileSync(file, 'utf8');
-const required = ['savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek','ensurePersonnelAutomation','syncFleetFromGoogle'];
+const required = ['savePlanVersion','nextEmployeeId','getNextPlanVersionV63','ensureWeek','ensurePersonnelAutomation','syncFleetFromGoogle','regenerateSingleDay'];
 const missing = required.filter(n => !new RegExp(`(?:async\\s+)?function\\s+${n}\\s*\\(`).test(src));
 if (missing.length) {
   console.error('Fehlende Kernfunktionen:', missing.join(', '));
