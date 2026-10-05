@@ -1,0 +1,6 @@
+ROGIS Dienstplan v6.4.17
+
+- Wageneinsatz strikt nach Wagennummer sortiert.
+- Nicht eingesetzte Fahrzeuge stehen an ihrer normalen Position zwischen den eingesetzten Fahrzeugen.
+- Fahrerwechsel und Umläufe bleiben je Wagen zusammengefasst.
+- Keine D1-Migration erforderlich.

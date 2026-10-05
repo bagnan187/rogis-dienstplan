@@ -229,3 +229,10 @@ Personalübersicht kompakter, tagesaktuelle Personalereignisse, sichtbare Azubi-
 
 ## v6.4.16
 Wageneinsatz zeigt jeden einsatzfähigen ROGIS-Wagen genau einmal. Nicht eingesetzte Wagen bleiben sichtbar; Fahrerwechsel und Umläufe werden je Wagen zusammengefasst.
+
+
+## v6.4.17
+
+- Wageneinsatz wird jetzt ausschließlich nach Wagennummer sortiert.
+- Eingesetzte und nicht eingesetzte Fahrzeuge bleiben gemeinsam in derselben numerischen Reihenfolge; nicht eingesetzte Wagen werden nicht mehr gesammelt ans Tabellenende verschoben.
+- Fahrerwechsel und Umläufe bleiben weiterhin je Wagennummer zusammengefasst.
