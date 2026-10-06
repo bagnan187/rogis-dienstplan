@@ -120,6 +120,7 @@ public sealed class MainForm : Form
     async Task SyncAndWriteAsync()
     {
         SaveConfig();
+        AssetInstaller.Install(_cfg,Log);
         var mapDir=MapDir();
         var slots=OmsiSlotScanner.Scan(mapDir,Log);
         if(slots.Count==0)throw new InvalidOperationException("Keine beschrifteten ROGIS-DepotSlot-Objekte gefunden.");
