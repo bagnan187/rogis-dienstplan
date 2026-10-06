@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net.Sockets;
+using System.Text;
 
 namespace ROGIS.ControlCentre;
 
@@ -17,6 +19,8 @@ public sealed class MainForm : Form
     readonly DataGridView _grid=new(){Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill};
     readonly TextBox _log=new(){Dock=DockStyle.Fill,Multiline=true,ScrollBars=ScrollBars.Vertical,ReadOnly=true};
     AppConfig _cfg;
+    UdpClient? _udp;
+    CancellationTokenSource? _udpCts;
 
     public MainForm()
     {
@@ -25,7 +29,8 @@ public sealed class MainForm : Form
         _cfg=AppConfig.Load();
         BuildUi();
         LoadConfigToUi();
-        Shown+=async(_,__)=>await Safe(RefreshOnlyAsync);
+        Shown+=async(_,__)=>{StartPluginListener();await Safe(RefreshOnlyAsync);};
+        FormClosed+=(_,__)=>{try{_udpCts?.Cancel();_udp?.Dispose();}catch{}};
     }
 
     void BuildUi()
@@ -211,4 +216,31 @@ public sealed class MainForm : Form
         if(InvokeRequired){BeginInvoke(()=>Log(s));return;}
         _log.AppendText($"[{DateTime.Now:HH:mm:ss}] {s}{Environment.NewLine}");
     }
+
+    void StartPluginListener()
+    {
+        try
+        {
+            _udpCts?.Cancel();_udp?.Dispose();
+            _udpCts=new CancellationTokenSource();
+            _udp=new UdpClient(_cfg.DepotPluginPort);
+            _=Task.Run(async()=>{
+                while(!_udpCts.IsCancellationRequested)
+                {
+                    try
+                    {
+                        var r=await _udp.ReceiveAsync(_udpCts.Token);
+                        var msg=Encoding.UTF8.GetString(r.Buffer);
+                        Log("openOMSI Plugin: "+msg);
+                    }
+                    catch(OperationCanceledException){break;}
+                    catch(ObjectDisposedException){break;}
+                    catch(Exception ex){Log("Plugin-UDP: "+ex.Message);await Task.Delay(1000);}
+                }
+            });
+            Log($"openOMSI Depot-Plugin verbunden: UDP {_cfg.DepotPluginPort}.");
+        }
+        catch(Exception ex){Log("Plugin-Listener konnte nicht gestartet werden: "+ex.Message);}
+    }
+
 }
