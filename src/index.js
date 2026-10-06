@@ -118,12 +118,12 @@ function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=emp
 function slotDepotName(v){let x=String(v||"").toLowerCase();if(x.includes("spryndorf"))return"Betriebshof Spryndorf";if(x.includes("hechem"))return"Betriebshof Hechem";return"Betriebshof Mitte"}
 function vehicleNeedsArticulated(v){return !!v?.large||String(v?.group||v?.group_type||"").toLowerCase()==="artic"||/(gelenk|18\b|18c|a23|gn\b|gl\b)/i.test(String(v?.model||""))}
 function vehicleNeedsElectric(v){return !!v?.alternative||/(electric|elektro|e[ -]?lion|elnlc|lion.?s city e|ecitaro|e-citaro)/i.test(String(v?.model||""))}
-function slotTypeForVehicle(v){return (vehicleNeedsElectric(v)?"E":"D")+(vehicleNeedsArticulated(v)?"G":"S")}
+function slotTypeForVehicle(v){return vehicleNeedsArticulated(v)?"G":"S"}
 function slotFitsVehicle(slot,v){
  const need=slotTypeForVehicle(v),have=String(slot?.type||slot?.slot_type||"").toUpperCase();
- if(have===need)return true;
- // A long slot may hold a solo bus, but diesel/electric infrastructure must still match.
- return need==="DS"&&have==="DG"||need==="ES"&&have==="EG";
+ // Depotbelegung unterscheidet nur noch nach Fahrzeuglänge. D/E ist reine Objektbezeichnung.
+ // Solo darf auf Solo- oder Gelenkplatz, Gelenk nur auf Gelenkplatz.
+ return need==="G"?have.endsWith("G"):have.endsWith("S")||have.endsWith("G");
 }
 async function loadDepotSlots(env){
  const r=await env.DB.prepare(`SELECT slot_id id,depot,slot_type type,length_m length,x,y,z,heading,map_name mapName,object_path objectPath,synced_at syncedAt FROM depot_slots WHERE active=1 ORDER BY slot_id`).all();
@@ -143,7 +143,7 @@ function intervalFree(res,slotId,from,to,ignoreVehicle=null){
 }
 function pickSlot(slots,depot,vehicle,res,from,to,seed,ignoreVehicle=null){
  let c=slots.filter(x=>x.depot===depot&&slotFitsVehicle(x,vehicle)&&intervalFree(res,x.id,from,to,ignoreVehicle));
- c.sort((a,b)=>{let ae=String(a.type)===slotTypeForVehicle(vehicle)?0:1,be=String(b.type)===slotTypeForVehicle(vehicle)?0:1;return ae-be||hash(seed+"|"+a.id)-hash(seed+"|"+b.id)||a.id.localeCompare(b.id,"de",{numeric:true})});
+ c.sort((a,b)=>{let ae=String(a.type||"").endsWith(slotTypeForVehicle(vehicle))?0:1,be=String(b.type||"").endsWith(slotTypeForVehicle(vehicle))?0:1;return ae-be||hash(seed+"|"+a.id)-hash(seed+"|"+b.id)||a.id.localeCompare(b.id,"de",{numeric:true})});
  return c[0]||null;
 }
 function usageForDay(day){
@@ -612,7 +612,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.27",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.28",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
