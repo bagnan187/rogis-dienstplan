@@ -16,6 +16,7 @@ on:
       - "control-centre/**"
       - ".github/workflows/control-centre-build.yml"
       - "src/index.js"
+      - "public/index.html"
   workflow_dispatch:
 
 jobs:
