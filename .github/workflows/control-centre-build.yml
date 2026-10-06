@@ -5,6 +5,7 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - fix/website-current-slot-v6431
       - fix/slot-label-parser-v6430
       - fix/ecitarog-hall-slots-v6429
       - fix/depot-length-only-v6428
