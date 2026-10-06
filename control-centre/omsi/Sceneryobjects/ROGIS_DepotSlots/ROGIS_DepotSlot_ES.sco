@@ -1,17 +1,24 @@
 [friendlyname]
-ROGIS Stellplatz Solo Elektro (ES) - 12,5 m
+ROGIS Depot Slot ES - 3D Bus Cube Solo
 
 [groups]
 2
 ROGIS
 Betriebshof Stellplaetze
 
-[mesh]
-model\ROGIS_DepotSlot_ES.o3d
+[onlyeditor]
 
-[rendertype]
-on_surface
+[mesh]
+model\\ROGIS_DepotSlot_ES.o3d
+
+[matl]
+rogis_depot_bus_cube.bmp
+0
 
 [nocollision]
 
 [fixed]
+
+[stringvarnamelist]
+1
+script\\depot_slot_stringvars.txt
