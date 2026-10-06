@@ -1,0 +1,10 @@
+ROGIS Dienstplan v6.4.24 – OMSI-Slots + Standortfortschreibung
+
+- Slotkatalog kommt nicht mehr hartcodiert aus der Website.
+- Control Centre synchronisiert die im OMSI-Editor platzierten ROGIS_DepotSlot_DS/DG/ES/EG-Objekte.
+- Die Beschriftung/Slot-ID aus der .map ist die eindeutige Stellplatznummer.
+- Startslot und Endslot stehen wieder im Wageneinsatz.
+- Endslot eines Tages wird persistenter Fahrzeugstandort und damit Startslot des nächsten Einsatztags.
+- Wagen ohne Einsatz bleiben auf ihrem letzten Slot stehen.
+- Slottyp und Buslänge werden geprüft.
+- openOMSI-Day-Payload enthält zusätzlich den fertigen slotPlan für die Static-Bus-Umsetzung.
