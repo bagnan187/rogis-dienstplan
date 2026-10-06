@@ -1,5 +1,5 @@
 [friendlyname]
-ROGIS Stellplatz EG - Elektro Gelenk
+ROGIS Stellplatz Gelenk Elektro (EG) - Elektro Gelenk
 
 [groups]
 2
@@ -17,7 +17,7 @@ DIN-Ziffern eng 1
 255
 
 [mesh]
-ROGIS_DepotSlot_EG.x
+model\ROGIS_DepotSlot_EG.x
 
 [matl]
 slot_text.bmp
