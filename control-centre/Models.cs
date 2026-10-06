@@ -6,5 +6,5 @@ public sealed record AiDay(bool ok,string date,string dayType,string timetableLi
 public sealed record SlotReservation(int from,int to,string? vehicle,string? kind);
 public sealed record SlotConflict(string slotId,SlotReservation? a,SlotReservation? b);
 public sealed record DepotVehicle(string? vehicle,int? vehicleNumber,string? model,bool used,string[]? runs,string? startDepot,string? startSlot,string? endDepot,string? endSlot,string? slotType,string? startTime,string? endTime);
-public sealed record DepotDay(bool ok,string date,int planVersion,bool depotAssignmentsFixed,int[]? missingVehicleAssignments,int slotCount,Dictionary<string,object>? depotOccupancy,Dictionary<string,SlotReservation[]>? slotReservations,SlotConflict[]? slotConflicts,DepotVehicle[] vehicles);
+public sealed record DepotDay(bool ok,string date,int planVersion,bool depotAssignmentsFixed,bool previewMode,int[]? missingVehicleAssignments,int slotCount,Dictionary<string,object>? depotOccupancy,Dictionary<string,SlotReservation[]>? slotReservations,SlotConflict[]? slotConflicts,DepotVehicle[] vehicles);
 public sealed record SlotSyncResult(bool ok,int slotCount,string? syncedAt,string? source);

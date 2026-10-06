@@ -15,8 +15,10 @@ public static class StaticRuntime
         if(day.slotConflicts is {Length:>0})
             throw new InvalidOperationException("Static-Belegung nicht geschrieben: Stellplatzkonflikt(e): "+string.Join(", ",day.slotConflicts.Select(x=>x.slotId).Distinct()));
 
-        if(!day.depotAssignmentsFixed)
+        if(!day.depotAssignmentsFixed&&!day.previewMode)
             throw new InvalidOperationException("Static-Belegung nicht geschrieben: Die Website hat für diesen Tagesplan noch keine fest gespeicherte Stellplatzbelegung.");
+        if(day.previewMode)
+            log?.Invoke("Static-Belegung läuft im TESTMODUS: nur die bereits angelegten Depot-Slots werden geschrieben.");
 
         var byId=slots.ToDictionary(s=>s.slotId,StringComparer.OrdinalIgnoreCase);
         CleanupRuntimeObjects(mapDir);

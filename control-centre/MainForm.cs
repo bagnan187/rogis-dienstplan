@@ -7,7 +7,7 @@ namespace ROGIS.ControlCentre;
 public sealed class MainForm : Form
 {
     readonly TextBox _url=new(){Dock=DockStyle.Fill};
-    readonly TextBox _token=new(){Dock=DockStyle.Fill,UseSystemPasswordChar=true};
+    readonly TextBox _token=new(){Dock=DockStyle.Fill,UseSystemPasswordChar=true,ReadOnly=true,TabStop=false};
     readonly TextBox _omsi=new(){Dock=DockStyle.Fill};
     readonly TextBox _map=new(){Dock=DockStyle.Fill};
     readonly TextBox _openOmsi=new(){Dock=DockStyle.Fill};
@@ -47,7 +47,7 @@ public sealed class MainForm : Form
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Sync-Token (automatisch)",_token);
+        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Verbindungsschlüssel (automatisch)",_token);
         AddField(cfgGrid,1,"OMSI-Root",_omsi,"Map-Ordner",_map);
         AddField(cfgGrid,2,"openOMSI.exe",_openOmsi,"Betriebstag",_date);
 
@@ -102,7 +102,6 @@ public sealed class MainForm : Form
     void SaveConfig()
     {
         _cfg.DienstplanBaseUrl=_url.Text.Trim();
-        _cfg.DepotSyncToken=_token.Text.Trim();
         _cfg.EnsureDepotSyncToken();
         _token.Text=_cfg.DepotSyncToken;
         _cfg.OmsiRoot=_omsi.Text.Trim();
@@ -153,8 +152,10 @@ public sealed class MainForm : Form
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
 
-        if(!depot.depotAssignmentsFixed)
+        if(!depot.depotAssignmentsFixed&&!depot.previewMode)
             throw new InvalidOperationException("Die Website hat noch keine feste Stellplatzplanung gespeichert.");
+        if(depot.previewMode)
+            Log("TESTMODUS: Es sind noch nicht genug Stellplätze für die gesamte Flotte vorhanden. Nur bereits angelegte Slots werden testweise mit Bussen belegt; dieser Vorschauzustand wird nicht als endgültiger Fahrzeugstand gespeichert.");
         if(depot.slotConflicts is {Length:>0})
             throw new InvalidOperationException("Stellplatzkonflikt: "+string.Join(", ",depot.slotConflicts.Select(x=>x.slotId).Distinct()));
         if(depot.missingVehicleAssignments is {Length:>0})
@@ -187,7 +188,7 @@ public sealed class MainForm : Form
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)
     {
-        _status.Text=$"Dienstplan {depot.date} · Planversion {depot.planVersion} · {(depot.depotAssignmentsFixed?"Stellplätze FEST GESPEICHERT":"Stellplätze noch nicht fest gespeichert")}";
+        _status.Text=$"Dienstplan {depot.date} · Planversion {depot.planVersion} · {(depot.previewMode?"TESTMODUS · Teilbelegung":depot.depotAssignmentsFixed?"Stellplätze FEST GESPEICHERT":"Stellplätze noch nicht fest gespeichert")}";
         _slotStatus.Text=$"Slots: {depot.slotCount}"+(slots is null?"":$" · lokal erkannt: {slots.Count}");
         _aiStatus.Text=$"KI-Umläufe: {ai.assignmentCount} · TTData: {ai.timetableLine}";
         _depotStatus.Text=(depot.slotConflicts?.Length??0)==0
