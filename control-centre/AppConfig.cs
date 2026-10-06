@@ -7,6 +7,7 @@ public sealed class AppConfig
 {
     public string DienstplanBaseUrl { get; set; } = "https://DEINE-DIENSTPLAN-DOMAIN";
     public string DepotSyncToken { get; set; } = "";
+    public string DepotClientId { get; set; } = "";
     public string OmsiRoot { get; set; } = @"C:\Program Files (x86)\Steam\steamapps\common\OMSI 2";
     public string MapFolder { get; set; } = "Städtedreieck21 V2";
     public string OpenOmsiExe { get; set; } = "";
@@ -25,16 +26,34 @@ public sealed class AppConfig
         if (source is null) cfg = new AppConfig();
         else cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(source),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new AppConfig();
-        cfg.EnsureDepotSyncToken();
+        cfg.EnsureDepotCredentials();
         // Alte portable Konfiguration einmalig nach LocalAppData übernehmen,
         // damit ein EXE-/ZIP-Update den Depot-Schlüssel nicht mehr austauscht.
         if (source != ConfigPath) cfg.Save();
         return cfg;
     }
 
-    public void EnsureDepotSyncToken()
+    public void EnsureDepotCredentials()
     {
-        if (!string.IsNullOrWhiteSpace(DepotSyncToken)) return;
+        var changed = false;
+        if (string.IsNullOrWhiteSpace(DepotSyncToken))
+        {
+            DepotSyncToken = "depot-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+            changed = true;
+        }
+        if (string.IsNullOrWhiteSpace(DepotClientId))
+        {
+            DepotClientId = "cc-" + Guid.NewGuid().ToString("N");
+            changed = true;
+        }
+        if (changed) Save();
+    }
+
+    public void EnsureDepotSyncToken() => EnsureDepotCredentials();
+
+    public void ResetDepotCredentials()
+    {
+        DepotClientId = "cc-" + Guid.NewGuid().ToString("N");
         DepotSyncToken = "depot-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
         Save();
     }
