@@ -28,8 +28,32 @@ public static class OmsiSlotScanner
                     !TryNum(lines[i + 6], out var z) || !TryNum(lines[i + 7], out var heading)) continue;
 
                 var label = "";
-                if (int.TryParse(lines[i + 10].Trim(), out var flags) && (flags & 8) != 0)
-                    label = lines[i + 11].Trim().ToUpperInvariant();
+                // OMSI speichert an dieser Stelle die Anzahl der Stringvariablen,
+                // nicht ein Bit-Flag. Bei unseren DepotSlots ist das normalerweise 1
+                // und direkt danach folgt z. B. M001. Zur Sicherheit durchsuchen wir
+                // alle deklarierten Stringwerte sowie als Fallback den kompletten
+                // Objektblock bis zur nächsten Sektion.
+                var blockEnd=i+1;
+                while(blockEnd<lines.Length && (blockEnd==i+1 || !lines[blockEnd].TrimStart().StartsWith("[")))
+                    blockEnd++;
+
+                if (int.TryParse(lines[i + 10].Trim(), out var stringCount) && stringCount > 0)
+                {
+                    for (var k=0; k<stringCount && i+11+k<blockEnd; k++)
+                    {
+                        var candidate=lines[i+11+k].Trim().ToUpperInvariant();
+                        if (SlotRx.IsMatch(candidate)) { label=candidate; break; }
+                    }
+                }
+
+                if (string.IsNullOrEmpty(label))
+                {
+                    for(var k=i+11;k<blockEnd;k++)
+                    {
+                        var candidate=lines[k].Trim().ToUpperInvariant();
+                        if(SlotRx.IsMatch(candidate)){label=candidate;break;}
+                    }
+                }
 
                 if (!SlotRx.IsMatch(label))
                 {
