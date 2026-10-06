@@ -1,0 +1,8 @@
+ROGIS v6.4.34 – Depot-Kopplung und Stellplatz-Reparatur
+
+- Control Centre überträgt DepotClientId sowohl als X-ROGIS-Depot-Client als auch als Query-Fallback.
+- 401-Autorepair kann sich dadurch auch hinter Proxies/Cloudflare zuverlässig neu koppeln.
+- Slot-Sync löscht gültige feste depot_slot_assignments nicht mehr pauschal.
+- Ungültige Slot-Verweise werden gezielt entfernt.
+- Nach erfolgreichem Slot-Sync wird die angeforderte Planwoche sofort auf fehlende Stellplatzzuordnungen geprüft und ggf. neu geplant.
+- Bereits vollständige Pläne werden zusätzlich gegen die aktuell aktiven Slot-IDs validiert.

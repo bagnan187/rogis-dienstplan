@@ -17,15 +17,15 @@ public sealed class DienstplanApi : IDisposable
         _http = new HttpClient { BaseAddress = new Uri(cfg.DienstplanBaseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
     }
 
-    public async Task<SlotSyncResult> SyncSlotsAsync(IReadOnlyList<DepotSlot> slots)
+    public async Task<SlotSyncResult> SyncSlotsAsync(IReadOnlyList<DepotSlot> slots, DateTime? date = null)
     {
-        var first = await SyncSlotsAttemptAsync(slots);
+        var first = await SyncSlotsAttemptAsync(slots, date);
         if (first.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
             // Selbstheilung: neue lokale Depot-Identität erzeugen und einmal automatisch neu koppeln.
             _cfg.ResetDepotCredentials();
             first.Dispose();
-            first = await SyncSlotsAttemptAsync(slots);
+            first = await SyncSlotsAttemptAsync(slots, date);
         }
 
         using (first)
@@ -37,11 +37,14 @@ public sealed class DienstplanApi : IDisposable
         }
     }
 
-    async Task<HttpResponseMessage> SyncSlotsAttemptAsync(IReadOnlyList<DepotSlot> slots)
+    async Task<HttpResponseMessage> SyncSlotsAttemptAsync(IReadOnlyList<DepotSlot> slots, DateTime? date)
     {
         _cfg.EnsureDepotCredentials();
-        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre", slots });
-        var req = new HttpRequestMessage(HttpMethod.Post, "api/openomsi/depot-slots");
+        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre v6.4.34", date = date?.ToString("yyyy-MM-dd"), slots });
+        // Client-ID absichtlich doppelt übertragen: Header + Query-Fallback.
+        // Einige Proxies/Cloudflare-Konfigurationen können unbekannte X-Header entfernen.
+        var clientId = Uri.EscapeDataString(_cfg.DepotClientId);
+        var req = new HttpRequestMessage(HttpMethod.Post, $"api/openomsi/depot-slots?clientId={clientId}");
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _cfg.DepotSyncToken);
         req.Headers.TryAddWithoutValidation("X-ROGIS-Depot-Client", _cfg.DepotClientId);
         req.Content = new StringContent(body, Encoding.UTF8, "application/json");

@@ -145,10 +145,10 @@ public sealed class MainForm : Form
         if(slots.Count==0)throw new InvalidOperationException("Keine beschrifteten ROGIS-DepotSlot-Objekte gefunden.");
 
         using var api=new DienstplanApi(_cfg);
-        var sync=await api.SyncSlotsAsync(slots);
+        var date=_date.Value.Date;
+        var sync=await api.SyncSlotsAsync(slots,date);
         Log($"{sync.slotCount} Stellplätze an den Dienstplan synchronisiert.");
 
-        var date=_date.Value.Date;
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
 

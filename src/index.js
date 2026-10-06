@@ -354,9 +354,12 @@ async function buildPartialDepotPreviewV6431(plan,env,slots=null,fleet=null){
 async function ensureDepotPlanState(env,plan){
  const fleet=await activeDepotFleet(env),dates=Object.keys(plan?.days||{}).sort();
  if(!dates.length)return plan;
- const complete=dates.every(d=>Object.keys(plan.days[d]?.depotSlots||{}).length>=fleet.length);
+ const slots=await loadDepotSlots(env),activeSlotIds=new Set(slots.map(x=>String(x.id||"").toUpperCase()));
+ const complete=dates.every(d=>{
+   const assigned=Object.values(plan.days[d]?.depotSlots||{});
+   return assigned.length>=fleet.length&&assigned.every(a=>activeSlotIds.has(String(a?.startSlot||"").toUpperCase())&&activeSlotIds.has(String(a?.endSlot||a?.returnSlot||"").toUpperCase()));
+ });
  if(complete)return plan;
- const slots=await loadDepotSlots(env);
  if(slots.length<fleet.length)return buildPartialDepotPreviewV6431(plan,env,slots,fleet);
  await assignDepotSlotsToPlan(plan,env);
  const body=JSON.stringify(plan),now=new Date().toISOString();
@@ -379,7 +382,7 @@ async function depotTokenHash(token){const b=new TextEncoder().encode(String(tok
 async function depotSyncAuthorizeOrPair(req,env){
  const auth=String(req.headers.get("authorization")||""),m=auth.match(/^Bearer\\s+(.+)$/i),token=String(m?.[1]||"").trim();
  if(token.length<32)return false;
- const hash=await depotTokenHash(token),clientId=String(req.headers.get("x-rogis-depot-client")||"").trim();
+ const hash=await depotTokenHash(token),u=new URL(req.url),clientId=String(req.headers.get("x-rogis-depot-client")||u.searchParams.get("clientId")||u.searchParams.get("client")||"").trim();
  if(clientId){
    if(!/^[A-Za-z0-9._:-]{8,160}$/.test(clientId))return false;
    const row=await env.DB.prepare(`SELECT token_hash FROM depot_sync_clients WHERE client_id=?`).bind(clientId).first(),now=new Date().toISOString();
@@ -410,7 +413,10 @@ async function syncDepotSlotsV6425(env,rawSlots,source="ROGIS Control Centre"){
  if(!clean.length)throw new Error("Keine gültig beschrifteten Depot-Slots gefunden. Erwartet werden z. B. M001, S001 oder H001.");
  await env.DB.prepare(`UPDATE depot_slots SET active=0`).run();
  for(const x of clean)await env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now).run();
- await env.DB.prepare(`DELETE FROM depot_slot_assignments`).run();
+ // Gültige feste Zuordnungen behalten. Nur Verweise auf inzwischen entfernte Slots verwerfen.
+ await env.DB.prepare(`DELETE FROM depot_slot_assignments
+   WHERE (start_slot IS NOT NULL AND start_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))
+      OR (return_slot IS NOT NULL AND return_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))`).run();
  return{ok:true,slotCount:clean.length,syncedAt:now,source};
 }
 
@@ -734,13 +740,24 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.33",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.34",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
-     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre v6.4.32 repariert die Kopplung beim nächsten Versuch automatisch."},401);
-     let b=await req.json();try{return json(await syncDepotSlotsV6425(env,b.slots,b.source||"ROGIS Control Centre"))}catch(e){return json({error:e?.message||String(e)},400)}
+     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre v6.4.34 koppelt automatisch neu (Header- und Query-Fallback)."},401);
+     let b=await req.json();try{
+       const sync=await syncDepotSlotsV6425(env,b.slots,b.source||"ROGIS Control Centre");
+       const requestedDate=/^\d{4}-\d{2}-\d{2}$/.test(String(b?.date||""))?String(b.date):berlinDateKey();
+       try{
+         const mk=dateKey(mondayOf(parseDateKey(requestedDate)));
+         let plan=await ensureWeek(env,mk,"openomsi-depot-sync",false);
+         plan=await ensureDepotPlanState(env,plan);
+         return json({...sync,plannedDate:requestedDate,depotAssignmentsFixed:Object.keys(plan?.days?.[requestedDate]?.depotSlots||{}).length>0});
+       }catch(planErr){
+         return json({...sync,plannedDate:requestedDate,planningWarning:planErr?.message||String(planErr)});
+       }
+     }catch(e){return json({error:e?.message||String(e)},400)}
    }
    if(req.method==="GET"){
      if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden."},401);
