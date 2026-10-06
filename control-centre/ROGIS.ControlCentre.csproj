@@ -8,4 +8,7 @@
     <AssemblyName>ROGIS Control Centre</AssemblyName>
     <RootNamespace>ROGIS.ControlCentre</RootNamespace>
   </PropertyGroup>
+  <ItemGroup>
+    <Content Include="omsi\**\*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
