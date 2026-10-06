@@ -1,5 +1,5 @@
 [friendlyname]
-ROGIS Stellplatz DG - Diesel Gelenk
+ROGIS Stellplatz Gelenk Diesel (DG) - Diesel Gelenk
 
 [groups]
 2
@@ -17,7 +17,7 @@ DIN-Ziffern eng 1
 255
 
 [mesh]
-ROGIS_DepotSlot_DG.x
+model\ROGIS_DepotSlot_DG.x
 
 [matl]
 slot_text.bmp
