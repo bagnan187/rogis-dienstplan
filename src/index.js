@@ -352,6 +352,34 @@ function chooseDepotSlot(slots,depot,need,taken,seed){
    .filter(x=>x.fit<99).sort((a,b)=>a.fit-b.fit||a.rnd-b.rnd||a.s.slot_id.localeCompare(b.s.slot_id,"de",{numeric:true}));
  return cand[0]?.s||null;
 }
+
+function depotClockMinutes(v,fallback=0){
+ const m=String(v||"").trim().match(/^(\d{1,2}):(\d{2})$/);
+ if(!m)return fallback;
+ return Number(m[1])*60+Number(m[2]);
+}
+function slotIntervalFree(reservations,slotId,from,to){
+ const list=reservations.get(slotId)||[];
+ return !list.some(r=>Math.max(from,r.from)<Math.min(to,r.to));
+}
+function reserveSlotInterval(reservations,slotId,from,to,vehicle,kind){
+ if(!slotId||to<=from)return;
+ if(!reservations.has(slotId))reservations.set(slotId,[]);
+ reservations.get(slotId).push({from,to,vehicle,kind});
+}
+function chooseDepotSlotInterval(slots,depot,need,reservations,from,to,seed){
+ const cand=slots.filter(s=>s.depot===depot&&slotIntervalFree(reservations,s.slot_id,from,to))
+  .map(s=>({s,fit:slotCompatible(s.slot_type,need),rnd:hash(seed+"|"+s.slot_id)}))
+  .filter(x=>x.fit<99)
+  .sort((a,b)=>a.fit-b.fit||a.rnd-b.rnd||a.s.slot_id.localeCompare(b.s.slot_id,"de",{numeric:true}));
+ return cand[0]?.s||null;
+}
+function reservationSummary(reservations){
+ const out={};
+ for(const [slotId,list] of reservations)out[slotId]=[...list].sort((a,b)=>a.from-b.from);
+ return out;
+}
+
 async function applyDepotSlotsToRows(rows,date,env){
  const slots=await loadDepotSlots(env),takenStart=new Set(),takenEnd=new Set(),fleetByLabel=new Map();
  for(const v of await loadFleetFromDb(env))fleetByLabel.set(String(v.label||`KOM ${v.number}`),v);
