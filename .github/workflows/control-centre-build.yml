@@ -5,6 +5,7 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - chore/website-patch-artifact-v6431
       - fix/website-current-slot-v6431
       - fix/slot-label-parser-v6430
       - fix/ecitarog-hall-slots-v6429
@@ -36,3 +37,10 @@ jobs:
         with:
           name: ROGIS-Control-Centre-win64
           path: control-centre-publish/**
+      - name: Upload Website Patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: ROGIS-Dienstplan-Website-Patch
+          path: |
+            src/index.js
+            public/index.html
