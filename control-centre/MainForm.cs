@@ -47,7 +47,7 @@ public sealed class MainForm : Form
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Sync-Token",_token);
+        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Sync-Token (automatisch)",_token);
         AddField(cfgGrid,1,"OMSI-Root",_omsi,"Map-Ordner",_map);
         AddField(cfgGrid,2,"openOMSI.exe",_openOmsi,"Betriebstag",_date);
 
@@ -103,6 +103,8 @@ public sealed class MainForm : Form
     {
         _cfg.DienstplanBaseUrl=_url.Text.Trim();
         _cfg.DepotSyncToken=_token.Text.Trim();
+        _cfg.EnsureDepotSyncToken();
+        _token.Text=_cfg.DepotSyncToken;
         _cfg.OmsiRoot=_omsi.Text.Trim();
         _cfg.MapFolder=_map.Text.Trim();
         _cfg.OpenOmsiExe=_openOmsi.Text.Trim();
