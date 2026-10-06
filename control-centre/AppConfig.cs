@@ -14,6 +14,8 @@ public sealed class AppConfig
     public string StaticObjectFolder { get; set; } = @"Sceneryobjects\ROGISstatic";
     public string StaticObjectPattern { get; set; } = "ROGIS_{0}.sco";
     public int DepotPluginPort { get; set; } = 47830;
+    public bool LiveAiSyncEnabled { get; set; } = true;
+    public int LiveAiSyncSeconds { get; set; } = 7;
 
     public static string ConfigDirectory => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ROGIS", "ControlCentre");
     public static string ConfigPath => Path.Combine(ConfigDirectory, "control-centre.json");

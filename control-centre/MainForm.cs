@@ -16,21 +16,45 @@ public sealed class MainForm : Form
     readonly Label _slotStatus=new(){AutoSize=true};
     readonly Label _aiStatus=new(){AutoSize=true};
     readonly Label _depotStatus=new(){AutoSize=true};
+    readonly Label _liveAiStatus=new(){AutoSize=true,Text="Live KI-Sync: wird gestartet …"};
+    readonly CheckBox _liveAi=new(){AutoSize=true,Text="Live KI-Sync automatisch"};
     readonly DataGridView _grid=new(){Dock=DockStyle.Fill,ReadOnly=true,AllowUserToAddRows=false,AutoSizeColumnsMode=DataGridViewAutoSizeColumnsMode.Fill};
     readonly TextBox _log=new(){Dock=DockStyle.Fill,Multiline=true,ScrollBars=ScrollBars.Vertical,ReadOnly=true};
     AppConfig _cfg;
     UdpClient? _udp;
     CancellationTokenSource? _udpCts;
+    readonly System.Windows.Forms.Timer _liveAiTimer=new();
+    bool _liveAiBusy;
+    string? _lastLiveAiSignature;
+    string? _lastLiveAiError;
 
     public MainForm()
     {
-        Text="ROGIS Control Centre";
+        Text="ROGIS Control Centre v6.4.36";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
         LoadConfigToUi();
-        Shown+=async(_,__)=>{StartPluginListener();await StartupRefreshAsync();};
-        FormClosed+=(_,__)=>{try{_udpCts?.Cancel();_udp?.Dispose();}catch{}};
+        _liveAiTimer.Interval=Math.Max(3,_cfg.LiveAiSyncSeconds)*1000;
+        _liveAiTimer.Tick+=async(_,__)=>await LiveAiTickAsync();
+        _liveAi.CheckedChanged+=async(_,__)=>
+        {
+            _cfg.LiveAiSyncEnabled=_liveAi.Checked;
+            _cfg.Save();
+            if(_liveAi.Checked)
+            {
+                _liveAiStatus.Text="Live KI-Sync: aktiv · prüfe Plan …";
+                await LiveAiTickAsync(true);
+            }
+            else _liveAiStatus.Text="Live KI-Sync: aus";
+        };
+        _date.ValueChanged+=async(_,__)=>
+        {
+            _lastLiveAiSignature=null;
+            if(_liveAi.Checked)await LiveAiTickAsync(true);
+        };
+        Shown+=async(_,__)=>{StartPluginListener();await StartupRefreshAsync();StartLiveAiSync();};
+        FormClosed+=(_,__)=>{try{_liveAiTimer.Stop();_udpCts?.Cancel();_udp?.Dispose();}catch{}};
     }
 
     void BuildUi()
@@ -54,6 +78,7 @@ public sealed class MainForm : Form
         var buttons=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true};
         buttons.Controls.Add(Button("Einstellungen speichern",(_,__)=>SaveConfig()));
         buttons.Controls.Add(Button("Status aktualisieren",async(_,__)=>await Safe(RefreshOnlyAsync)));
+        buttons.Controls.Add(_liveAi);
         buttons.Controls.Add(Button("KI + Hofbelegung schreiben",async(_,__)=>await Safe(SyncAndWriteAsync)));
         buttons.Controls.Add(Button("Synchronisieren + openOMSI starten",async(_,__)=>await Safe(LaunchAsync)));
         cfgGrid.Controls.Add(buttons,0,3);cfgGrid.SetColumnSpan(buttons,4);
@@ -61,7 +86,7 @@ public sealed class MainForm : Form
 
         var statusBox=new GroupBox{Text="Planstatus",Dock=DockStyle.Top,AutoSize=true};
         var statusFlow=new FlowLayoutPanel{Dock=DockStyle.Fill,AutoSize=true,FlowDirection=FlowDirection.TopDown,WrapContents=false};
-        statusFlow.Controls.Add(_status);statusFlow.Controls.Add(_slotStatus);statusFlow.Controls.Add(_aiStatus);statusFlow.Controls.Add(_depotStatus);
+        statusFlow.Controls.Add(_status);statusFlow.Controls.Add(_slotStatus);statusFlow.Controls.Add(_aiStatus);statusFlow.Controls.Add(_liveAiStatus);statusFlow.Controls.Add(_depotStatus);
         statusBox.Controls.Add(statusFlow);
 
         _grid.Columns.Add("vehicle","Wagen");
@@ -97,6 +122,7 @@ public sealed class MainForm : Form
     {
         _url.Text=_cfg.DienstplanBaseUrl;_token.Text=_cfg.DepotSyncToken;_omsi.Text=_cfg.OmsiRoot;
         _map.Text=_cfg.MapFolder;_openOmsi.Text=_cfg.OpenOmsiExe;_date.Value=DateTime.Today;
+        _liveAi.Checked=_cfg.LiveAiSyncEnabled;
     }
 
     void SaveConfig()
@@ -107,11 +133,60 @@ public sealed class MainForm : Form
         _cfg.OmsiRoot=_omsi.Text.Trim();
         _cfg.MapFolder=_map.Text.Trim();
         _cfg.OpenOmsiExe=_openOmsi.Text.Trim();
+        _cfg.LiveAiSyncEnabled=_liveAi.Checked;
         _cfg.Save();
         Log("Einstellungen gespeichert.");
     }
 
     string MapDir()=>Path.Combine(_cfg.OmsiRoot,"maps",_cfg.MapFolder);
+
+    void StartLiveAiSync()
+    {
+        _liveAiTimer.Start();
+        _liveAiStatus.Text=_liveAi.Checked?"Live KI-Sync: aktiv · prüft alle "+Math.Max(3,_cfg.LiveAiSyncSeconds)+" s":"Live KI-Sync: aus";
+        if(_liveAi.Checked)_=LiveAiTickAsync(true);
+    }
+
+    static string AiSignature(AiDay ai) =>
+        ai.date+"|"+ai.planVersion+"|"+string.Join(";",(ai.assignments??Array.Empty<AiAssignment>())
+            .OrderBy(x=>x.tour,StringComparer.OrdinalIgnoreCase)
+            .Select(x=>x.tour+"="+x.vehicleNumber));
+
+    async Task LiveAiTickAsync(bool force=false)
+    {
+        if(!_liveAi.Checked||_liveAiBusy||IsDisposed||UseWaitCursor)return;
+        _liveAiBusy=true;
+        try
+        {
+            using var api=new DienstplanApi(_cfg);
+            var ai=await api.GetAiDayAsync(_date.Value.Date);
+            var sig=AiSignature(ai);
+            var path=Path.Combine(MapDir(),"car_use",$"000_ROGIS_Dienstplan_{ai.date.Replace("-","")}.ocu");
+            if(force||!string.Equals(sig,_lastLiveAiSignature,StringComparison.Ordinal)||!File.Exists(path))
+            {
+                var ocu=OcuGenerator.Write(_cfg,ai,Log);
+                _lastLiveAiSignature=sig;
+                _lastLiveAiError=null;
+                _liveAiStatus.Text=$"Live KI-Sync: aktiv · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
+                Log($"Live KI-Sync: Planversion {ai.planVersion} übernommen · {ai.assignmentCount} Wagen/Umläufe · {ocu}");
+            }
+            else
+            {
+                _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
+                _lastLiveAiError=null;
+            }
+        }
+        catch(Exception ex)
+        {
+            _liveAiStatus.Text="Live KI-Sync: Fehler · "+ex.Message;
+            if(!string.Equals(_lastLiveAiError,ex.Message,StringComparison.Ordinal))
+            {
+                Log("Live KI-Sync FEHLER: "+ex.Message);
+                _lastLiveAiError=ex.Message;
+            }
+        }
+        finally{_liveAiBusy=false;}
+    }
 
     async Task StartupRefreshAsync()
     {
@@ -162,6 +237,8 @@ public sealed class MainForm : Form
             Log($"WARNUNG: {depot.missingVehicleAssignments.Length} Wagen haben in dieser Planversion keinen gespeicherten Stellplatz.");
 
         var ocu=OcuGenerator.Write(_cfg,ai,Log);
+        _lastLiveAiSignature=AiSignature(ai);
+        _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
         var statics=StaticRuntime.Build(_cfg,mapDir,slots,depot,Log);
         Log($"KI-Datei geschrieben: {ocu}");
         Log($"{statics} Static-Bus-Instanzen für die fest geplante Hofbelegung geschrieben.");

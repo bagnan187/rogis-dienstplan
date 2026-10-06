@@ -1,0 +1,9 @@
+ROGIS Control Centre v6.4.36 – Live KI-Verkehr-Sync wieder eingebaut
+
+- Automatischer Live-KI-Sync ist standardmäßig aktiv und sichtbar im Control Centre.
+- Alle 7 Sekunden wird die aktive openOMSI-Wagendisposition für den gewählten Betriebstag geprüft.
+- Bei geänderter Planversion oder geänderter Wagen/Tour-Zuordnung wird car_use/000_ROGIS_Dienstplan_YYYYMMDD.ocu automatisch aktualisiert.
+- Die Website bleibt führende Quelle für die konkrete Wagennummer auf jedem ROGIS-Umlauf.
+- Manueller Button „KI + Hofbelegung schreiben“ bleibt erhalten und aktualisiert Live-KI-Signatur ebenfalls.
+- Die Funktion kann per Checkbox deaktiviert werden.
+- Bereits in openOMSI gespawnte KI-Fahrzeuge werden durch eine reine OCU-Datei nicht mitten in einer laufenden Sitzung ersetzt; die aktualisierte Zuordnung greift beim nächsten Laden/Neuladen der Fahrplandaten.
