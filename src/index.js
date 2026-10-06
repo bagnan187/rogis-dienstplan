@@ -171,6 +171,12 @@ async function ensureSchema(env){await env.DB.batch([env.DB.prepare(`CREATE TABL
 env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slots(slot_id TEXT PRIMARY KEY,depot TEXT NOT NULL,slot_type TEXT NOT NULL,tile TEXT,object_id TEXT,map_path TEXT,x REAL,y REAL,z REAL,heading REAL,enabled INTEGER NOT NULL DEFAULT 1,updated_at TEXT NOT NULL)`),
 env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slot_sync_state(id INTEGER PRIMARY KEY CHECK(id=1),synced_at TEXT,slot_count INTEGER NOT NULL DEFAULT 0,source TEXT,message TEXT)`)] );await env.DB.prepare(`INSERT OR IGNORE INTO week_plan_versions(monday,version,plan_json,generated_at,generated_by,mode,note) SELECT monday,version,plan_json,generated_at,generated_by,'legacy','Bestehende aktive Version übernommen' FROM week_plans`).run()}
 function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8",...headers}})}
+function depotSyncAuthorized(req,env){
+ const expected=String(env.ROGIS_DEPOT_SYNC_TOKEN||"").trim();
+ if(!expected)return false;
+ const auth=String(req.headers.get("authorization")||"");
+ return auth===`Bearer ${expected}`;
+}
 function cookieToken(req){let c=req.headers.get("cookie")||"",m=c.match(/(?:^|;\s*)rogis_session=([^;]+)/);return m?decodeURIComponent(m[1]):null}
 async function sessionUser(req,env){let tok=cookieToken(req);if(!tok)return null;let s=await env.DB.prepare(`SELECT username,expires_at FROM sessions WHERE token=?`).bind(tok).first();if(!s||new Date(s.expires_at)<new Date())return null;let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(s.username).first();if(!u)return null;let emp=EMP_BY_ID.get(u.employee_id);if(!emp||employeeLifecycleStatus(emp,new Date())!=="active")return null;return{...u,emp}}
 async function getOrCreateUser(username,env){let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first();if(u)return u;let emp=EMP_BY_USER.get(username);if(!emp)return null;let existing=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(emp.id).first();if(existing)return null;let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),role=ADMIN_NAMES.has(emp.name)?"admin":"user",now=new Date().toISOString();await env.DB.prepare(`INSERT INTO users(username,employee_id,role,password_hash,salt,must_change,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)`).bind(username,emp.id,role,ph,salt,now,now).run();return await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}
@@ -486,6 +492,20 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
  if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.22",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
+ if(p==="/api/openomsi/depot-slots"){
+   if(!depotSyncAuthorized(req,env))return json({error:"Ungültiger oder fehlender ROGIS Depot-Sync-Token."},401);
+   if(req.method==="GET"){
+     let all=url.searchParams.get("all")==="1";
+     let r=await env.DB.prepare(all?`SELECT slot_id,depot,slot_type,tile,object_id,map_path,x,y,z,heading,enabled,updated_at FROM depot_slots ORDER BY depot,slot_id`:`SELECT slot_id,depot,slot_type,tile,object_id,map_path,x,y,z,heading,enabled,updated_at FROM depot_slots WHERE enabled=1 ORDER BY depot,slot_id`).all();
+     let state=await env.DB.prepare(`SELECT * FROM depot_slot_sync_state WHERE id=1`).first();
+     return json({slots:r.results||[],slotCount:(r.results||[]).length,syncedAt:state?.synced_at||null,source:state?.source||null,message:state?.message||""});
+   }
+   if(req.method==="POST"){
+     let b=await req.json();
+     try{return json(await syncDepotSlots(env,b.slots,b.source||"ROGIS Depot Sync"))}catch(e){return json({error:e?.message||String(e)},400)}
+   }
+   return json({error:"Methode nicht erlaubt."},405);
+ }
  if(p==="/api/openomsi/depot-day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-depot-sync",false);return json(await openOmsiDepotDayPayload(plan,date,env),200,{"cache-control":"no-store"})}
  if(p==="/api/login"&&req.method==="POST"){let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();let emp=EMP_BY_ID.get(u.employee_id);if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);let ls=employeeLifecycleStatus(emp,new Date());if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`})}
  if(p==="/api/logout"&&req.method==="POST"){let tok=cookieToken(req);if(tok)await env.DB.prepare(`DELETE FROM sessions WHERE token=?`).bind(tok).run();return json({ok:true},200,{"set-cookie":"rogis_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"})}
