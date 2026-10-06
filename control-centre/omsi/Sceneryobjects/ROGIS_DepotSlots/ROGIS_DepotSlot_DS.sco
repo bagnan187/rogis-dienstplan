@@ -1,5 +1,5 @@
 [friendlyname]
-ROGIS Stellplatz DS - Diesel Solo
+ROGIS Stellplatz Solo Diesel (DS) - Diesel Solo
 
 [groups]
 2
@@ -17,7 +17,7 @@ DIN-Ziffern eng 1
 255
 
 [mesh]
-ROGIS_DepotSlot_DS.x
+model\ROGIS_DepotSlot_DS.x
 
 [matl]
 slot_text.bmp
