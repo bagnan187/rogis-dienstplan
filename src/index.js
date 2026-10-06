@@ -60,12 +60,24 @@ function breakMinutes(p){return(p.internalBreaks||[]).reduce((n,b)=>n+(b.end-b.s
 function managementDrive(emp,d,seed=""){let dow=d.getUTCDay();if(dow===0||dow===6)return hash(emp.id+dateKey(d)+"weekend"+seed)%100<55;let mon=dateKey(mondayOf(d)),h=hash(emp.id+mon+"mgmtprofile"+seed),count=h%100<25?5:(h%100<78?4:3),days=shuffle([1,2,3,4,5],emp.id+mon+"mgmtdays"+seed).slice(0,count);return days.includes(dow)}
 const ANNUAL_FREE_DAYS=30;
 const ANNUAL_FREE_DATE_CACHE=new Map();
+const YEAR_DATE_KEYS_CACHE=new Map();
+function yearDateKeys(year){
+ let cached=YEAR_DATE_KEYS_CACHE.get(year);if(cached)return cached;
+ let d=new Date(Date.UTC(year,0,1,12)),end=new Date(Date.UTC(year+1,0,1,12)),out=[];
+ while(d<end){out.push(dateKey(d));d=addDays(d,1)}
+ YEAR_DATE_KEYS_CACHE.set(year,out);return out;
+}
+function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){let t=a%b;a=b;b=t}return a||1}
 function annualFreeDateSet(emp,year){
  const key=`${emp.id}|${year}`,cached=ANNUAL_FREE_DATE_CACHE.get(key);if(cached)return cached;
- let d=new Date(Date.UTC(year,0,1,12)),end=new Date(Date.UTC(year+1,0,1,12)),candidates=[];
- while(d<end){if(employeeActiveOn(emp,d)){let k=dateKey(d);candidates.push({date:k,score:hash(`${emp.id}|${k}|annual-free-v6433`)})}d=addDays(d,1)}
- candidates.sort((a,b)=>a.score-b.score||a.date.localeCompare(b.date));
- const selected=new Set(candidates.slice(0,Math.min(ANNUAL_FREE_DAYS,candidates.length)).map(x=>x.date));
+ const ys=`${year}-01-01`,ye=`${year}-12-31`,from=emp.startDate&&emp.startDate>ys?emp.startDate:ys,to=emp.endDate&&emp.endDate<ye?emp.endDate:ye;
+ const candidates=from>to?[]:yearDateKeys(year).filter(k=>k>=from&&k<=to),selected=new Set(),n=candidates.length,count=Math.min(ANNUAL_FREE_DAYS,n);
+ if(n&&count){
+   let idx=hash(`${emp.id}|${year}|annual-free-start-v6438`)%n;
+   let step=1+(hash(`${emp.id}|${year}|annual-free-step-v6438`)%Math.max(1,n-1));
+   while(gcdInt(step,n)!==1)step=step%n+1;
+   for(let i=0;i<count;i++){selected.add(candidates[idx]);idx=(idx+step)%n}
+ }
  ANNUAL_FREE_DATE_CACHE.set(key,selected);return selected;
 }
 function isAnnualFreeDay(emp,d){return !!emp&&annualFreeDateSet(emp,d.getUTCFullYear()).has(dateKey(d))}
@@ -76,7 +88,7 @@ function timeToMin(t,fallback=0){let m=String(t||"").match(/^(\d{1,2}):(\d{2})$/
 function clockInWindow(absMin,startClock,endClock){let c=((absMin%1440)+1440)%1440;return startClock<=endClock?(c>=startClock&&c<=endClock):(c>=startClock||c<=endClock)}
 function latestEndDeadline(startAbs,latestEndClock){let base=Math.floor(startAbs/1440)*1440,deadline=base+latestEndClock;if(deadline<startAbs)deadline+=1440;return deadline}
 function buildDay(d,cfg=DEFAULT_GENERATION_SETTINGS,fleet=DATA.fleet,seed="",employeeSettings={}){const dk=dateKey(d),selected=selectRuns(d),usedVehicles=new Set(),runInfo={},external=[],pieces=[];
- const hasCustom=emp=>Object.prototype.hasOwnProperty.call(employeeSettings||{},emp.id);const cfgForEmp=(emp)=>employeeCfgForDate(employeeSettings?.[emp.id]||null,d);for(const run of selected){if(run.gr||run.tl){let operator=run.tl?"Neumann Reisen":"Breitbau Tours";runInfo[run.run]={run,vehicle:null,operator,external:true,manualVehicle:true,drivers:[]};external.push({run,operator});continue}const v=vehicleFor(run.category,usedVehicles,dk+run.run+seed,fleet,run);runInfo[run.run]={run,vehicle:v,operator:"ROGIS",external:false,drivers:[]};pieces.push(...splitRun(run,dk+run.run+seed,cfg))}
+ const empCfgCache=new Map();const cfgForEmp=(emp)=>{let c=empCfgCache.get(emp.id);if(c)return c;c=employeeCfgForDate(employeeSettings?.[emp.id]||null,d);empCfgCache.set(emp.id,c);return c};for(const run of selected){if(run.gr||run.tl){let operator=run.tl?"Neumann Reisen":"Breitbau Tours";runInfo[run.run]={run,vehicle:null,operator,external:true,manualVehicle:true,drivers:[]};external.push({run,operator});continue}const v=vehicleFor(run.category,usedVehicles,dk+run.run+seed,fleet,run);runInfo[run.run]={run,vehicle:v,operator:"ROGIS",external:false,drivers:[]};pieces.push(...splitRun(run,dk+run.run+seed,cfg))}
  const emil=DATA.employees.find(e=>e.name==="Emil Breitbau"),tim=DATA.employees.find(e=>e.name==="Tim Neumann"),assignments={},busy=new Set();
  const add=(emp,p,operator,vehicle,manualVehicle=false)=>{let rec={...p,operator,vehicle:manualVehicle?"Wagen manuell nachtragen":(vehicle?vehicle.label:"KOM offen"),vehicleModel:manualVehicle?"":(vehicle?vehicle.model:""),manualVehicle:!!manualVehicle,employeeId:emp.id,employeeName:emp.name};(assignments[emp.id]??=[]).push(rec);busy.add(emp.id);if(runInfo[p.run]){runInfo[p.run].drivers.push(emp.name);if(vehicle&&!runInfo[p.run].vehicle)runInfo[p.run].vehicle=vehicle;runInfo[p.run].operator=operator;runInfo[p.run].external=operator!=="ROGIS";runInfo[p.run].manualVehicle=!!manualVehicle}};
  /* TL/GR sind Fremdverkehre. Wenn ein solcher Umlauf in einem Personaldienst auftaucht, darf er ausschließlich Emil oder Tim zugeteilt werden. Die übrigen TL/GR-Umläufe bleiben als Fremdleistungen beim jeweiligen Unternehmen. */
@@ -757,7 +769,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.37",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.38",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){

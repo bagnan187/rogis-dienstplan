@@ -1,0 +1,7 @@
+ROGIS Backend v6.4.38 – Worker CPU Hotfix
+
+- Jahres-Frei-Tage werden nicht mehr pro Mitarbeiter über 365/366 Tage gehasht und sortiert.
+- Weiterhin maximal 30 deterministische Frei-Tage pro Kalenderjahr, aber Auswahl jetzt ohne teure Jahressortierung.
+- Jahresdatumslisten werden einmal pro Jahr gecacht.
+- Individuelle Mitarbeiter-Generationskriterien werden innerhalb eines Tages pro Mitarbeiter nur einmal aufgelöst und gecacht.
+- Ziel: Cloudflare Worker Error 1102 bei Wochen-/Tagesgenerierung beseitigen.
