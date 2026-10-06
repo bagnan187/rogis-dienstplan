@@ -31,7 +31,13 @@ function dayType(d){return d.getUTCDay()===6?"SA":d.getUTCDay()===0?"SO":"WK"}
 function selectRuns(d){const dt=dayType(d),friday=d.getUTCDay()===5,holiday=false,all=DATA.runs.filter(r=>r.dayType===dt),by={};for(const r of all)(by[r.runNum]??=[]).push(r);const out=[];for(const rs of Object.values(by)){let chosen=null;if(friday)chosen=rs.find(x=>x.flags.includes("FR"));if(holiday&&!chosen)chosen=rs.find(x=>x.flags.includes("F")&&!x.flags.includes("FR"));if(!chosen)chosen=rs.find(x=>!x.flags.includes("F")&&!x.flags.includes("FR"));if(chosen)out.push(chosen)}return out}
 function vehicleGroupForCategory(cat){return ["1","3","5","7"].includes(String(cat))?"artic":"solo"}
 function eligibleVehicle(v,cat){/* Die Website disponiert einzelne reale Wagen zufällig. Die alten Merkmale alternative/large/regio dürfen keine Hersteller- oder Modellserie bevorzugen. Nur die benötigte Grundbauart (Solo/Gelenk) und der Status "Im Betrieb" bleiben bindend. */return !!v?.regular&&v.group===vehicleGroupForCategory(cat)}
-function vehicleFor(cat,used,seed,fleet=DATA.fleet){let pool=fleet.filter(v=>eligibleVehicle(v,cat)&&!used.has(v.number));let v=shuffle(pool,seed+"|fleet-random-v6418")[0];/* Falls eine Bauart ausnahmsweise komplett aufgebraucht ist, darf kein bereits eingesetzter Wagen doppelt vergeben werden. Erst dann wird aus allen übrigen einsatzfähigen Wagen gezogen. */if(!v)v=shuffle(fleet.filter(x=>x.regular&&!used.has(x.number)),seed+"|fleet-random-fallback-v6418")[0];if(v)used.add(v.number);return v||null}
+function vehicleFor(cat,used,seed,fleet=DATA.fleet,run=null){
+ let runDepot=slotDepotName(depotForRun(run||{}));
+ let pool=fleet.filter(v=>eligibleVehicle(v,cat)&&!used.has(v.number)&&(!isECitaroGHallVehicle(v)||runDepot==="Betriebshof Mitte"));
+ let v=shuffle(pool,seed+"|fleet-random-v6429")[0];
+ if(!v)v=shuffle(fleet.filter(x=>x.regular&&!used.has(x.number)&&(!isECitaroGHallVehicle(x)||runDepot==="Betriebshof Mitte")),seed+"|fleet-random-fallback-v6429")[0];
+ if(v)used.add(v.number);return v||null
+}
 function ttTourFor(run){let dt=run.dayType,alias=TT_ALIASES?.[dt]?.[run.run]||run.run;return TT_SCHEDULE?.[dt]?.[alias]||null}
 function ttLine(v){v=String(v||"").trim();return isRealServiceLine(v)?v:null}
 function ttPiece(run,legs,i0,i1){let slice=legs.slice(i0,i1+1),first=slice[0],last=slice[slice.length-1],lines=[...new Set(slice.map(x=>ttLine(x.l)).filter(Boolean))];return{run:run.run,runNum:run.runNum,tl:run.tl,gr:run.gr,category:run.category,start:first.d,end:last.a,startLoc:renameStop(first.s||run.startPlace),endLoc:renameStop(last.e||first.s||run.startPlace),lines,startPlace:renameStop(run.startPlace),runDepot:depotForRun(run),internalBreaks:[],timetableVerified:true,tripRefs:slice.map(x=>x.t)}}
@@ -58,7 +64,7 @@ function timeToMin(t,fallback=0){let m=String(t||"").match(/^(\d{1,2}):(\d{2})$/
 function clockInWindow(absMin,startClock,endClock){let c=((absMin%1440)+1440)%1440;return startClock<=endClock?(c>=startClock&&c<=endClock):(c>=startClock||c<=endClock)}
 function latestEndDeadline(startAbs,latestEndClock){let base=Math.floor(startAbs/1440)*1440,deadline=base+latestEndClock;if(deadline<startAbs)deadline+=1440;return deadline}
 function buildDay(d,cfg=DEFAULT_GENERATION_SETTINGS,fleet=DATA.fleet,seed="",employeeSettings={}){const dk=dateKey(d),selected=selectRuns(d),usedVehicles=new Set(),runInfo={},external=[],pieces=[];
- const hasCustom=emp=>Object.prototype.hasOwnProperty.call(employeeSettings||{},emp.id);const cfgForEmp=(emp)=>employeeCfgForDate(employeeSettings?.[emp.id]||null,d);for(const run of selected){if(run.gr||run.tl){let operator=run.tl?"Neumann Reisen":"Breitbau Tours";runInfo[run.run]={run,vehicle:null,operator,external:true,manualVehicle:true,drivers:[]};external.push({run,operator});continue}const v=vehicleFor(run.category,usedVehicles,dk+run.run+seed,fleet);runInfo[run.run]={run,vehicle:v,operator:"ROGIS",external:false,drivers:[]};pieces.push(...splitRun(run,dk+run.run+seed,cfg))}
+ const hasCustom=emp=>Object.prototype.hasOwnProperty.call(employeeSettings||{},emp.id);const cfgForEmp=(emp)=>employeeCfgForDate(employeeSettings?.[emp.id]||null,d);for(const run of selected){if(run.gr||run.tl){let operator=run.tl?"Neumann Reisen":"Breitbau Tours";runInfo[run.run]={run,vehicle:null,operator,external:true,manualVehicle:true,drivers:[]};external.push({run,operator});continue}const v=vehicleFor(run.category,usedVehicles,dk+run.run+seed,fleet,run);runInfo[run.run]={run,vehicle:v,operator:"ROGIS",external:false,drivers:[]};pieces.push(...splitRun(run,dk+run.run+seed,cfg))}
  const emil=DATA.employees.find(e=>e.name==="Emil Breitbau"),tim=DATA.employees.find(e=>e.name==="Tim Neumann"),assignments={},busy=new Set();
  const add=(emp,p,operator,vehicle,manualVehicle=false)=>{let rec={...p,operator,vehicle:manualVehicle?"Wagen manuell nachtragen":(vehicle?vehicle.label:"KOM offen"),vehicleModel:manualVehicle?"":(vehicle?vehicle.model:""),manualVehicle:!!manualVehicle,employeeId:emp.id,employeeName:emp.name};(assignments[emp.id]??=[]).push(rec);busy.add(emp.id);if(runInfo[p.run]){runInfo[p.run].drivers.push(emp.name);if(vehicle&&!runInfo[p.run].vehicle)runInfo[p.run].vehicle=vehicle;runInfo[p.run].operator=operator;runInfo[p.run].external=operator!=="ROGIS";runInfo[p.run].manualVehicle=!!manualVehicle}};
  /* TL/GR sind Fremdverkehre. Wenn ein solcher Umlauf in einem Personaldienst auftaucht, darf er ausschließlich Emil oder Tim zugeteilt werden. Die übrigen TL/GR-Umläufe bleiben als Fremdleistungen beim jeweiligen Unternehmen. */
@@ -119,10 +125,20 @@ function slotDepotName(v){let x=String(v||"").toLowerCase();if(x.includes("spryn
 function vehicleNeedsArticulated(v){return !!v?.large||String(v?.group||v?.group_type||"").toLowerCase()==="artic"||/(gelenk|18\b|18c|a23|gn\b|gl\b)/i.test(String(v?.model||""))}
 function vehicleNeedsElectric(v){return !!v?.alternative||/(electric|elektro|e[ -]?lion|elnlc|lion.?s city e|ecitaro|e-citaro)/i.test(String(v?.model||""))}
 function slotTypeForVehicle(v){return vehicleNeedsArticulated(v)?"G":"S"}
+const ECITARO_G_HALL_ASSIGNMENTS=Object.freeze({"2540":"M001","2541":"M002","2542":"M003","2543":"M004","2544":"M005","2545":"M006","2546":"M007","2547":"M008","2548":"M009","2549":"M010"});
+const ECITARO_G_HALL_SLOTS=new Set(["M001","M002","M003","M004","M005","M006","M007","M008","M009","M010","M011","M012"]);
+function isECitaroGHallVehicle(v){return Object.prototype.hasOwnProperty.call(ECITARO_G_HALL_ASSIGNMENTS,String(v?.number||""))}
+function fixedHallSlotFor(v){return ECITARO_G_HALL_ASSIGNMENTS[String(v?.number||"")]||null}
+function slotAllowedForVehicle(slot,v){
+ const id=String(slot?.id||slot?.slot_id||"").toUpperCase();
+ if(isECitaroGHallVehicle(v))return id===fixedHallSlotFor(v);
+ return !ECITARO_G_HALL_SLOTS.has(id);
+}
 function slotFitsVehicle(slot,v){
+ if(!slotAllowedForVehicle(slot,v))return false;
  const need=slotTypeForVehicle(v),have=String(slot?.type||slot?.slot_type||"").toUpperCase();
- // Depotbelegung unterscheidet nur noch nach Fahrzeuglänge. D/E ist reine Objektbezeichnung.
- // Solo darf auf Solo- oder Gelenkplatz, Gelenk nur auf Gelenkplatz.
+ // Depotbelegung unterscheidet normal nur nach Fahrzeuglänge. D/E ist reine Objektbezeichnung.
+ // M001-M012 sind jedoch exklusiv für die eCitaro G reserviert; 2540-2549 haben M001-M010 fest.
  return need==="G"?have.endsWith("G"):have.endsWith("S")||have.endsWith("G");
 }
 async function loadDepotSlots(env){
@@ -184,7 +200,14 @@ async function assignDepotSlotsToPlan(plan,env){
 
  // Seed every active bus from its last REAL saved end location before this plan.
  for(const v of fleet){
-   const vn=String(v.number),prev=await latestVehicleSlotBefore(env,vn,dates[0]),obj=prev?.slotId?byId.get(String(prev.slotId).toUpperCase()):null;
+   const vn=String(v.number);
+   if(isECitaroGHallVehicle(v)){
+     const fixed=fixedHallSlotFor(v),obj=byId.get(fixed);
+     if(!obj)throw new Error(`Fester Hallenstellplatz ${fixed} für eCitaro G KOM ${vn} fehlt im OMSI-Editor.`);
+     if(!String(obj.type||"").endsWith("G"))throw new Error(`Fester Hallenstellplatz ${fixed} für eCitaro G KOM ${vn} muss als Gelenk-Slot (EG oder DG) angelegt sein.`);
+     state.set(vn,fixed);continue;
+   }
+   const prev=await latestVehicleSlotBefore(env,vn,dates[0]),obj=prev?.slotId?byId.get(String(prev.slotId).toUpperCase()):null;
    if(obj&&slotFitsVehicle(obj,v))state.set(vn,obj.id);
  }
 
@@ -225,8 +248,13 @@ async function assignDepotSlotsToPlan(plan,env){
    for(const [vn,u] of ordered){
      const v=fleet.find(x=>String(x.number)===vn)||u.vehicle||{},startId=state.get(vn),startObj=byId.get(startId);
      const depart=Math.max(1,Number.isFinite(u.start)?u.start:1),arrive=Math.max(depart,Number.isFinite(u.end)?u.end:depart);
-     let endDepot=slotDepotName(u.endDepot||startObj?.depot),ret=null;
-     if(startObj&&startObj.depot===endDepot&&slotFitsVehicle(startObj,v)&&intervalFree(res,startObj.id,arrive,H,vn))ret=startObj;
+     let endDepot=isECitaroGHallVehicle(v)?"Betriebshof Mitte":slotDepotName(u.endDepot||startObj?.depot),ret=null;
+     if(isECitaroGHallVehicle(v)){
+       const fixed=byId.get(fixedHallSlotFor(v));
+       if(!fixed)throw new Error(`Fester Hallenstellplatz ${fixedHallSlotFor(v)} für eCitaro G KOM ${vn} fehlt.`);
+       if(!intervalFree(res,fixed.id,arrive,H,vn))throw new Error(`Fester Hallenstellplatz ${fixed.id} für eCitaro G KOM ${vn} ist bei Rückkehr belegt.`);
+       ret=fixed;
+     }else if(startObj&&startObj.depot===endDepot&&slotFitsVehicle(startObj,v)&&intervalFree(res,startObj.id,arrive,H,vn))ret=startObj;
      if(!ret)ret=pickSlot(slots,endDepot,v,res,arrive,H,date+"|"+vn+"|return",vn);
      if(!ret)throw new Error(`Kein freier Rückgabestellplatz in ${endDepot} für KOM ${vn} ab ${minToTime(arrive)}.`);
      reserveInterval(res,ret.id,arrive,H,vn,"end");
@@ -612,7 +640,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.28",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.29",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
