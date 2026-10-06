@@ -31,17 +31,29 @@ public sealed class DienstplanApi : IDisposable
         return JsonSerializer.Deserialize<SlotSyncResult>(text, _json) ?? throw new InvalidOperationException("Ungültige Slot-Sync-Antwort.");
     }
 
-    public async Task<DepotDay> GetDepotDayAsync(DateTime date)
+    async Task<T> GetJsonAsync<T>(string relativeUrl,string label)
     {
-        var text = await _http.GetStringAsync($"api/openomsi/depot-day?date={date:yyyy-MM-dd}");
-        return JsonSerializer.Deserialize<DepotDay>(text, _json) ?? throw new InvalidOperationException("Ungültige Depot-Antwort.");
+        using var res=await _http.GetAsync(relativeUrl);
+        var text=await res.Content.ReadAsStringAsync();
+        if(!res.IsSuccessStatusCode)
+        {
+            var detail=text;
+            try
+            {
+                using var doc=JsonDocument.Parse(text);
+                if(doc.RootElement.TryGetProperty("error",out var e))detail=e.GetString()??text;
+            }
+            catch { }
+            throw new InvalidOperationException($"{label} HTTP {(int)res.StatusCode}: {detail}");
+        }
+        return JsonSerializer.Deserialize<T>(text,_json) ?? throw new InvalidOperationException($"Ungültige {label}-Antwort.");
     }
 
-    public async Task<AiDay> GetAiDayAsync(DateTime date)
-    {
-        var text = await _http.GetStringAsync($"api/openomsi/day?date={date:yyyy-MM-dd}");
-        return JsonSerializer.Deserialize<AiDay>(text, _json) ?? throw new InvalidOperationException("Ungültige KI-Antwort.");
-    }
+    public Task<DepotDay> GetDepotDayAsync(DateTime date) =>
+        GetJsonAsync<DepotDay>($"api/openomsi/depot-day?date={date:yyyy-MM-dd}","Depot");
+
+    public Task<AiDay> GetAiDayAsync(DateTime date) =>
+        GetJsonAsync<AiDay>($"api/openomsi/day?date={date:yyyy-MM-dd}","KI");
 
     public void Dispose() => _http.Dispose();
 }
