@@ -22,7 +22,12 @@ public sealed class DienstplanApi : IDisposable
         using var content = new StringContent(body, Encoding.UTF8, "application/json");
         using var res = await _http.PostAsync("api/openomsi/depot-slots", content);
         var text = await res.Content.ReadAsStringAsync();
-        if (!res.IsSuccessStatusCode) throw new InvalidOperationException($"Slot-Sync HTTP {(int)res.StatusCode}: {text}");
+        if (!res.IsSuccessStatusCode)
+        {
+            if ((int)res.StatusCode == 401)
+                throw new InvalidOperationException("Depot-Sync nicht autorisiert. Bitte Website und Control Centre auf denselben aktuellen Stand bringen; der Token wird danach automatisch gekoppelt. Server: " + text);
+            throw new InvalidOperationException($"Slot-Sync HTTP {(int)res.StatusCode}: {text}");
+        }
         return JsonSerializer.Deserialize<SlotSyncResult>(text, _json) ?? throw new InvalidOperationException("Ungültige Slot-Sync-Antwort.");
     }
 
