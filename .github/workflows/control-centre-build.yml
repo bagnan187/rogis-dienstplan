@@ -5,6 +5,7 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - fix/annual-free-days-v6433
       - fix/depot-autorepair-v6432
       - fix/website-current-slot-v6431
       - fix/slot-label-parser-v6430
