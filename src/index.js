@@ -114,67 +114,203 @@ function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=emp
  if(ay===2&&!segs.length){let ts=apprenticeTrainingState(emp,d);if(weekend0)return{status:"Frei",dutyType:"Ausbildung · 2. Lehrjahr",depot:"",serviceTime:"",segments:[]};if(ts.phase==="MPU / Eignungsuntersuchung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · MPU / Eignungsuntersuchung",depot:"Betriebshof Mitte",serviceTime:"08:00-12:00",segments:[]};if(ts.phase==="Klasse D · Theorie / Schulungen")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Theorie / Schulungen",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};if(ts.phase==="Klasse D · Prüfung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Prüfung",depot:"Betriebshof Mitte",serviceTime:"08:00-14:00",segments:[]};if(ts.phase==="Klasse D · Praxis / Begleitfahrten")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Praxis / Fahrschule",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D bestanden / Fahrdienstreserve",depot:emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
  if(segs.length){let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end)),decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));if(x.trainingPassengers?.length)x.remarks=`${x.trainingPassengers[0]} fährt als Azubi im 2. Lehrjahr mit.`;x.events=eventize(x,i===0,i===segs.length-1,depot);return x});return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}if(isVacation(emp,d))return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[]};if(isSick(emp,d))return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[]};let dow=d.getUTCDay(),weekend=dow===0||dow===6,h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));if(weekend&&isOfficeWeekendFree(emp)&&emp.name!=="Emil Breitbau"&&emp.name!=="Tim Neumann")return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};return weekend?{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]}:{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}if(emp.name==="Robert Edward Davis")return weekend?{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]}:{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};if(ay===3&&!segs.length){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return weekend?{status:"Frei",dutyType:"Ausbildung · 3. Lehrjahr",depot:"",serviceTime:"",segments:[]}:{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}if(emp.bereich==="Fahrdienst"){let r=h%100;if(r<56)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";if(r<82){let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]}}if(r<91)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}if(weekend)return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[]};let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]}}
 
-// Depot slots v6.4.24: authoritative catalog comes from the OMSI map scanner.
-function slotDepotName(v){let s=String(v||'').toLowerCase();if(s.includes('spryndorf'))return'Spryndorf';if(s.includes('hechem'))return'Hechem';return'Mitte'}
-function vehicleNeedsArticulated(v){return !!v?.large||/(gelenk|18\b|18c|a23|gn\b|gl\b)/i.test(String(v?.model||''))}
-function vehicleNeedsElectric(v){return /(electric|elektro|e[ -]?lion|elnlc|lion.?s city e)/i.test(String(v?.model||''))}
-function slotTypeForVehicle(v){return (vehicleNeedsElectric(v)?'E':'D')+(vehicleNeedsArticulated(v)?'G':'S')}
-function slotFitsVehicle(slot,v){const needLen=vehicleNeedsArticulated(v)?18:12,need=slotTypeForVehicle(v);return Number(slot.length||0)>=needLen&&(slot.type===need||String(slot.type||'').slice(1)===need.slice(1))}
-async function loadDepotSlots(env){let r=await env.DB.prepare(`SELECT slot_id id,depot,slot_type type,length_m length,x,y,z,heading,map_name mapName,object_path objectPath,synced_at syncedAt FROM depot_slots WHERE active=1 ORDER BY slot_id`).all();return r.results||[]}
-async function latestVehicleSlotBefore(env,vehicleNumber,date){return await env.DB.prepare(`SELECT slot_id slotId,depot,effective_date effectiveDate FROM vehicle_slot_history WHERE vehicle_number=? AND effective_date<? ORDER BY effective_date DESC LIMIT 1`).bind(String(vehicleNumber),date).first()}
+// Depot slots v6.4.25: OMSI editor catalog + persistent real vehicle locations.
+function slotDepotName(v){let x=String(v||"").toLowerCase();if(x.includes("spryndorf"))return"Betriebshof Spryndorf";if(x.includes("hechem"))return"Betriebshof Hechem";return"Betriebshof Mitte"}
+function vehicleNeedsArticulated(v){return !!v?.large||String(v?.group||v?.group_type||"").toLowerCase()==="artic"||/(gelenk|18\\b|18c|a23|gn\\b|gl\\b)/i.test(String(v?.model||""))}
+function vehicleNeedsElectric(v){return !!v?.alternative||/(electric|elektro|e[ -]?lion|elnlc|lion.?s city e|ecitaro|e-citaro)/i.test(String(v?.model||""))}
+function slotTypeForVehicle(v){return (vehicleNeedsElectric(v)?"E":"D")+(vehicleNeedsArticulated(v)?"G":"S")}
+function slotFitsVehicle(slot,v){
+ const need=slotTypeForVehicle(v),have=String(slot?.type||slot?.slot_type||"").toUpperCase();
+ if(have===need)return true;
+ // A long slot may hold a solo bus, but diesel/electric infrastructure must still match.
+ return need==="DS"&&have==="DG"||need==="ES"&&have==="EG";
+}
+async function loadDepotSlots(env){
+ const r=await env.DB.prepare(`SELECT slot_id id,depot,slot_type type,length_m length,x,y,z,heading,map_name mapName,object_path objectPath,synced_at syncedAt FROM depot_slots WHERE active=1 ORDER BY slot_id`).all();
+ return (r.results||[]).map(x=>({...x,id:String(x.id||"").toUpperCase(),depot:slotDepotName(x.depot),type:String(x.type||"").toUpperCase()}));
+}
+async function latestVehicleSlotBefore(env,vehicleNumber,date){
+ return await env.DB.prepare(`SELECT slot_id slotId,depot,effective_date effectiveDate,plan_version planVersion FROM vehicle_slot_history WHERE vehicle_number=? AND effective_date<? ORDER BY effective_date DESC,plan_version DESC LIMIT 1`).bind(String(vehicleNumber),date).first();
+}
+function slotClock(v,fallback){let m=String(v||"").match(/^(\\d{1,2}):(\\d{2})$/);return m?Number(m[1])*60+Number(m[2]):fallback}
+function reserveInterval(res,slotId,from,to,vehicle,kind){
+ if(!slotId||to<=from)return;
+ if(!res.has(slotId))res.set(slotId,[]);
+ res.get(slotId).push({from,to,vehicle:String(vehicle),kind});
+}
+function intervalFree(res,slotId,from,to,ignoreVehicle=null){
+ return !(res.get(slotId)||[]).some(r=>(!ignoreVehicle||String(r.vehicle)!==String(ignoreVehicle))&&Math.max(from,r.from)<Math.min(to,r.to));
+}
+function pickSlot(slots,depot,vehicle,res,from,to,seed,ignoreVehicle=null){
+ let c=slots.filter(x=>x.depot===depot&&slotFitsVehicle(x,vehicle)&&intervalFree(res,x.id,from,to,ignoreVehicle));
+ c.sort((a,b)=>{let ae=String(a.type)===slotTypeForVehicle(vehicle)?0:1,be=String(b.type)===slotTypeForVehicle(vehicle)?0:1;return ae-be||hash(seed+"|"+a.id)-hash(seed+"|"+b.id)||a.id.localeCompare(b.id,"de",{numeric:true})});
+ return c[0]||null;
+}
+function usageForDay(day){
+ const out=new Map();
+ for(const [runKey,info] of Object.entries(day?.runInfo||{})){
+   if(!info||info.external||info.manualVehicle||!info.vehicle?.number)continue;
+   const vn=String(info.vehicle.number),u=out.get(vn)||{vehicle:info.vehicle,start:48*60,end:0,startDepot:"Betriebshof Mitte",endDepot:"Betriebshof Mitte",runs:[]};
+   u.runs.push(String(runKey));
+   let touched=false;
+   for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
+     if(String(seg.vehicle||"").match(/\\d+/)?.[0]!==vn||String(seg.run||"")!==String(runKey))continue;
+     touched=true;
+     u.start=Math.min(u.start,Number.isFinite(Number(seg.start))?Number(seg.start):slotClock(seg.startTime,48*60));
+     u.end=Math.max(u.end,Number.isFinite(Number(seg.end))?Number(seg.end):slotClock(seg.endTime,0));
+     u.startDepot=slotDepotName(seg.runDepot||seg.depot||seg.startLoc);
+     u.endDepot=slotDepotName(seg.endLoc||seg.runDepot||seg.depot||seg.startLoc);
+   }
+   if(!touched){
+     const run=info.run||{};
+     u.start=Math.min(u.start,Number.isFinite(Number(run.start))?Number(run.start):slotClock(run.startTime,1));
+     u.end=Math.max(u.end,Number.isFinite(Number(run.end))?Number(run.end):slotClock(run.endTime,u.start));
+     u.startDepot=slotDepotName(run.depot||run.startLoc);
+     u.endDepot=slotDepotName(run.endLoc||run.depot||run.startLoc);
+   }
+   out.set(vn,u);
+ }
+ return out;
+}
+async function activeDepotFleet(env){
+ const fleet=(await loadFleetFromDb(env)).filter(v=>v.regular||String(v.status||"").trim().toLowerCase()==="im betrieb");
+ return fleet.sort((a,b)=>Number(a.number)-Number(b.number));
+}
 async function assignDepotSlotsToPlan(plan,env){
-  const slots=await loadDepotSlots(env);
-  if(!slots.length)throw new Error("Keine Depot-Slots vom OMSI-Scanner vorhanden. Zuerst Control Centre synchronisieren.");
-  const byId=new Map(slots.map(x=>[x.id,x])), dates=Object.keys(plan.days||{}).sort(), state=new Map();
-  // seed each vehicle's location from the last saved day before this plan
-  const vehicleNumbers=new Set();
-  for(const day of Object.values(plan.days||{}))for(const info of Object.values(day.runInfo||{}))if(info?.vehicle?.number)vehicleNumbers.add(String(info.vehicle.number));
-  for(const vn of vehicleNumbers){let prev=await latestVehicleSlotBefore(env,vn,dates[0]);if(prev?.slotId&&byId.has(prev.slotId))state.set(vn,prev.slotId)}
-  for(const date of dates){
-    const day=plan.days[date], usages=new Map(), byVehicle={};
-    for(const [runKey,info] of Object.entries(day.runInfo||{})){
-      if(info?.external||info?.manualVehicle||!info?.vehicle?.number)continue;
-      const vn=String(info.vehicle.number),u=usages.get(vn)||{vehicle:info.vehicle,start:1e9,end:-1,startDepot:'Mitte',endDepot:'Mitte',runs:[]};
-      u.runs.push(runKey);
-      for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[])if(String(seg.vehicle||'').includes(vn)&&String(seg.run)===String(runKey)){
-        u.start=Math.min(u.start,Number(seg.start));u.end=Math.max(u.end,Number(seg.end));
-        u.startDepot=slotDepotName(seg.runDepot||seg.depot||seg.startLoc);
-        u.endDepot=slotDepotName(seg.endLoc||seg.runDepot||seg.depot||seg.startLoc);
-      }
-      usages.set(vn,u);
-    }
-    // Every known vehicle which is not out on service occupies its persistent slot.
-    const reserved=new Map();
-    for(const [vn,slotId] of state)reserved.set(slotId,vn);
-    const ordered=[...usages.entries()].sort((a,b)=>(a[1].start-b[1].start)||a[0].localeCompare(b[0],'de',{numeric:true}));
-    for(const [vn,u] of ordered){
-      let startSlot=state.get(vn)||null,startObj=startSlot?byId.get(startSlot):null;
-      if(!startObj||!slotFitsVehicle(startObj,u.vehicle)){
-        let candidates=slots.filter(x=>x.depot===u.startDepot&&slotFitsVehicle(x,u.vehicle)&&(!reserved.has(x.id)||reserved.get(x.id)===vn));
-        candidates.sort((a,b)=>a.id.localeCompare(b.id,'de',{numeric:true}));
-        if(!candidates.length)throw new Error(`Kein freier passender Stellplatz in ${u.startDepot} für KOM ${vn}.`);
-        startObj=candidates[0];startSlot=startObj.id;state.set(vn,startSlot);reserved.set(startSlot,vn);
-      }
-      // While the bus is out, its old slot may be released only if it returns to another depot.
-      let returnSlot=startSlot,returnObj=startObj;
-      if(u.endDepot&&u.endDepot!==startObj.depot){
-        reserved.delete(startSlot);
-        let candidates=slots.filter(x=>x.depot===u.endDepot&&slotFitsVehicle(x,u.vehicle)&&!reserved.has(x.id));
-        candidates.sort((a,b)=>a.id.localeCompare(b.id,'de',{numeric:true}));
-        if(!candidates.length)throw new Error(`Kein freier Rückgabestellplatz in ${u.endDepot} für KOM ${vn}.`);
-        returnObj=candidates[0];returnSlot=returnObj.id;
-      }
-      reserved.set(returnSlot,vn);state.set(vn,returnSlot);
-      byVehicle[vn]={vehicleNumber:vn,depot:returnObj.depot,startSlot,returnSlot,pulloutMin:Number.isFinite(u.start)?u.start:null,pullinMin:u.end>=0?u.end:null,slotType:returnObj.type,length:returnObj.length,
-        startPosition:{x:startObj.x,y:startObj.y,z:startObj.z,heading:startObj.heading},returnPosition:{x:returnObj.x,y:returnObj.y,z:returnObj.z,heading:returnObj.heading}};
-      for(const info of Object.values(day.runInfo||{}))if(String(info?.vehicle?.number||'')===vn){info.startSlot=startSlot;info.returnSlot=returnSlot}
-      for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[])if(String(seg.vehicle||'').includes(vn)){seg.startSlot=startSlot;seg.returnSlot=returnSlot}
-    }
-    // Vehicles without a duty remain exactly where they were.
-    day.depotSlots=byVehicle;
-    day.vehicleSlotState=Object.fromEntries([...state.entries()].map(([vehicleNumber,slotId])=>[vehicleNumber,{vehicleNumber,slotId,depot:byId.get(slotId)?.depot||''}]));
-  }
-  return plan;
+ const slots=await loadDepotSlots(env);
+ if(!slots.length)throw new Error("Keine Depot-Slots vom OMSI-Editor vorhanden. Im Control Centre zuerst die beschrifteten Slot-Cubes synchronisieren.");
+ const byId=new Map(slots.map(x=>[x.id,x])),fleet=await activeDepotFleet(env),dates=Object.keys(plan.days||{}).sort(),state=new Map(),H=48*60;
+ if(!dates.length)return plan;
+
+ // Seed every active bus from its last REAL saved end location before this plan.
+ for(const v of fleet){
+   const vn=String(v.number),prev=await latestVehicleSlotBefore(env,vn,dates[0]),obj=prev?.slotId?byId.get(String(prev.slotId).toUpperCase()):null;
+   if(obj&&slotFitsVehicle(obj,v))state.set(vn,obj.id);
+ }
+
+ // Initial placement only for buses without any prior location. Prefer the depot of their first duty.
+ const firstNeed=new Map();
+ for(const date of dates){
+   const uses=usageForDay(plan.days[date]);
+   for(const [vn,u] of uses)if(!firstNeed.has(vn))firstNeed.set(vn,u.startDepot);
+ }
+ const occupied=new Set(state.values());
+ for(const v of fleet){
+   const vn=String(v.number);if(state.has(vn))continue;
+   const preferred=firstNeed.get(vn)||null,depotOrder=["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"];
+   if(preferred)depotOrder.sort((a,b)=>(a===preferred?-1:b===preferred?1:0));
+   let chosen=null;
+   for(const depot of depotOrder){
+     const c=slots.filter(x=>x.depot===depot&&slotFitsVehicle(x,v)&&!occupied.has(x.id)).sort((a,b)=>a.id.localeCompare(b.id,"de",{numeric:true}));
+     if(c.length){chosen=c[0];break}
+   }
+   if(!chosen)throw new Error(`Kein freier passender Startstellplatz für KOM ${vn} vorhanden.`);
+   state.set(vn,chosen.id);occupied.add(chosen.id);
+ }
+
+ for(const date of dates){
+   const day=plan.days[date],uses=usageForDay(day),res=new Map(),byVehicle={};
+
+   // Morning reality: each bus starts exactly where yesterday left it.
+   // Idle buses stay there all day; working buses occupy the slot only until pull-out.
+   for(const v of fleet){
+     const vn=String(v.number),slotId=state.get(vn),slot=byId.get(slotId),u=uses.get(vn);
+     if(!slot)throw new Error(`Gespeicherter Stellplatz für KOM ${vn} existiert nicht mehr im OMSI-Editor.`);
+     const depart=u?Math.max(1,Number.isFinite(u.start)?u.start:1):H;
+     reserveInterval(res,slotId,0,depart,vn,u?"start":"idle");
+   }
+
+   // Plan returns chronologically so a slot is only used when it is actually free.
+   const ordered=[...uses.entries()].sort((a,b)=>(a[1].end-b[1].end)||a[0].localeCompare(b[0],"de",{numeric:true}));
+   for(const [vn,u] of ordered){
+     const v=fleet.find(x=>String(x.number)===vn)||u.vehicle||{},startId=state.get(vn),startObj=byId.get(startId);
+     const depart=Math.max(1,Number.isFinite(u.start)?u.start:1),arrive=Math.max(depart,Number.isFinite(u.end)?u.end:depart);
+     let endDepot=slotDepotName(u.endDepot||startObj?.depot),ret=null;
+     if(startObj&&startObj.depot===endDepot&&slotFitsVehicle(startObj,v)&&intervalFree(res,startObj.id,arrive,H,vn))ret=startObj;
+     if(!ret)ret=pickSlot(slots,endDepot,v,res,arrive,H,date+"|"+vn+"|return",vn);
+     if(!ret)throw new Error(`Kein freier Rückgabestellplatz in ${endDepot} für KOM ${vn} ab ${minToTime(arrive)}.`);
+     reserveInterval(res,ret.id,arrive,H,vn,"end");
+     state.set(vn,ret.id);
+     byVehicle[vn]={vehicleNumber:vn,used:true,startDepot:startObj.depot,startSlot:startObj.id,endDepot:ret.depot,endSlot:ret.id,returnSlot:ret.id,pulloutMin:depart,pullinMin:arrive,slotType:ret.type,
+       startPosition:{x:startObj.x,y:startObj.y,z:startObj.z,heading:startObj.heading},returnPosition:{x:ret.x,y:ret.y,z:ret.z,heading:ret.heading}};
+   }
+
+   // Vehicles without service remain on their exact slot; they never disappear or jump.
+   for(const v of fleet){
+     const vn=String(v.number);if(byVehicle[vn])continue;
+     const slot=byId.get(state.get(vn));
+     byVehicle[vn]={vehicleNumber:vn,used:false,startDepot:slot.depot,startSlot:slot.id,endDepot:slot.depot,endSlot:slot.id,returnSlot:slot.id,pulloutMin:null,pullinMin:null,slotType:slot.type,
+       startPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading},returnPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading}};
+   }
+
+   // Annotate runs for the web views.
+   for(const info of Object.values(day.runInfo||{})){
+     const vn=String(info?.vehicle?.number||""),a=byVehicle[vn];if(a){info.startSlot=a.startSlot;info.returnSlot=a.endSlot}
+   }
+   for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
+     const vn=String(seg.vehicle||"").match(/\\d+/)?.[0],a=vn?byVehicle[vn]:null;if(a){seg.startSlot=a.startSlot;seg.returnSlot=a.endSlot}
+   }
+   day.depotSlots=byVehicle;
+   day.vehicleSlotState=Object.fromEntries([...state.entries()].map(([vehicleNumber,slotId])=>[vehicleNumber,{vehicleNumber,slotId,depot:byId.get(slotId)?.depot||""}]));
+ }
+ return plan;
+}
+async function persistDepotPlanState(env,plan,now=new Date().toISOString()){
+ for(const [d,day] of Object.entries(plan.days||{})){
+   for(const a of Object.values(day.depotSlots||{})){
+     await env.DB.prepare(`INSERT OR REPLACE INTO depot_slot_assignments(duty_date,plan_version,vehicle_number,depot,start_slot,return_slot,pullout_min,pullin_min,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(d,plan.version,a.vehicleNumber,a.endDepot||a.startDepot||"",a.startSlot,a.endSlot||a.returnSlot,a.pulloutMin,a.pullinMin,now).run();
+   }
+   for(const st of Object.values(day.vehicleSlotState||{})){
+     await env.DB.prepare(`INSERT OR REPLACE INTO vehicle_slot_history(vehicle_number,effective_date,slot_id,depot,plan_version,created_at) VALUES(?,?,?,?,?,?)`).bind(st.vehicleNumber,d,st.slotId,st.depot,plan.version,now).run();
+   }
+ }
+}
+async function ensureDepotPlanState(env,plan){
+ const fleet=await activeDepotFleet(env),dates=Object.keys(plan?.days||{}).sort();
+ if(!dates.length)return plan;
+ const complete=dates.every(d=>Object.keys(plan.days[d]?.depotSlots||{}).length>=fleet.length);
+ if(complete)return plan;
+ await assignDepotSlotsToPlan(plan,env);
+ const body=JSON.stringify(plan),now=new Date().toISOString();
+ await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+ await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+ await persistDepotPlanState(env,plan,now);
+ return plan;
+}
+function depotReservationsForDay(day){
+ const H=48*60,res=new Map();
+ for(const a of Object.values(day?.depotSlots||{})){
+   if(a.used){reserveInterval(res,a.startSlot,0,Math.max(1,Number(a.pulloutMin||1)),a.vehicleNumber,"start");reserveInterval(res,a.endSlot||a.returnSlot,Math.max(1,Number(a.pullinMin||1)),H,a.vehicleNumber,"end")}
+   else reserveInterval(res,a.startSlot,0,H,a.vehicleNumber,"idle");
+ }
+ const conflicts=[];
+ for(const [slotId,list] of res){const a=[...list].sort((x,y)=>x.from-y.from);for(let i=1;i<a.length;i++)if(Math.max(a[i-1].from,a[i].from)<Math.min(a[i-1].to,a[i].to))conflicts.push({slotId,a:a[i-1],b:a[i]})}
+ return{summary:Object.fromEntries([...res.entries()]),conflicts};
+}
+async function depotTokenHash(token){const b=new TextEncoder().encode(String(token));const d=await crypto.subtle.digest("SHA-256",b);return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("")}
+async function depotSyncAuthorizeOrPair(req,env){
+ const auth=String(req.headers.get("authorization")||""),m=auth.match(/^Bearer\\s+(.+)$/i),token=String(m?.[1]||"").trim();
+ if(token.length<32)return false;
+ const hash=await depotTokenHash(token),row=await env.DB.prepare(`SELECT token_hash FROM depot_sync_pairing WHERE id=1`).first();
+ if(row){if(String(row.token_hash)!==hash)return false;await env.DB.prepare(`UPDATE depot_sync_pairing SET last_seen_at=? WHERE id=1`).bind(new Date().toISOString()).run();return true}
+ // Zero-config first pairing: the Control Centre generates a 256-bit random token locally.
+ const now=new Date().toISOString();
+ await env.DB.prepare(`INSERT OR IGNORE INTO depot_sync_pairing(id,token_hash,paired_at,last_seen_at,source) VALUES(1,?,?,?,?)`).bind(hash,now,now,"ROGIS Control Centre auto-pair").run();
+ const check=await env.DB.prepare(`SELECT token_hash FROM depot_sync_pairing WHERE id=1`).first();
+ return String(check?.token_hash||"")===hash;
+}
+async function syncDepotSlotsV6425(env,rawSlots,source="ROGIS Control Centre"){
+ const now=new Date().toISOString(),validTypes=new Set(["DS","DG","ES","EG"]),clean=[];
+ for(const x of Array.isArray(rawSlots)?rawSlots:[]){
+   const id=String(x?.slotId||x?.slot_id||x?.id||"").trim().toUpperCase(),type=String(x?.slotType||x?.slot_type||x?.type||"").trim().toUpperCase();
+   if(!/^[MSH]\\d{3,4}$/.test(id)||!validTypes.has(type))continue;
+   const depot=id.startsWith("S")?"Betriebshof Spryndorf":id.startsWith("H")?"Betriebshof Hechem":"Betriebshof Mitte",length=type.endsWith("G")?18:12;
+   clean.push({id,type,depot,length,x:Number(x?.x||0),y:Number(x?.y||0),z:Number(x?.z||0),heading:Number(x?.heading||0),mapName:String(x?.tile||x?.mapName||""),objectPath:String(x?.objectPath||x?.mapPath||"")});
+ }
+ if(!clean.length)throw new Error("Keine gültig beschrifteten Depot-Slots gefunden. Erwartet werden z. B. M001, S001 oder H001.");
+ await env.DB.prepare(`UPDATE depot_slots SET active=0`).run();
+ for(const x of clean)await env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now).run();
+ return{ok:true,slotCount:clean.length,syncedAt:now,source};
 }
 
 function generateWeek(monday,version=1,cfg={},fleet=DATA.fleet,seed="",employeeSettings={}){let settings={...DEFAULT_GENERATION_SETTINGS,_seed:seed},days={};for(let i=0;i<7;i++){let d=addDays(monday,i);days[dateKey(d)]=buildDay(d,settings,fleet,seed,employeeSettings)}return{monday:dateKey(monday),generatedAt:new Date().toISOString(),version,seed,settings,employeeSettings:{...employeeSettings},employeeSeeds:{},days}}
@@ -231,7 +367,7 @@ async function recordFleetSync(env,state){let now=new Date().toISOString();await
 async function syncFleetFromGoogle(env){let source=env.FLEET_SHEET_CSV_URL||FLEET_SHEET_DEFAULT;try{let res=await fetch(source,{headers:{"user-agent":"ROGIS-Dienstplan/1.1","accept":"text/csv,text/plain;q=0.9,*/*;q=0.1"}});if(!res.ok)throw new Error(`Google Sheets antwortet mit HTTP ${res.status}. Prüfe, ob die Tabelle per Link/CSV lesbar ist.`);let text=await res.text();if(!text||/<!doctype html|<html/i.test(text.slice(0,500)))throw new Error("Google Sheets lieferte keine CSV-Daten. Die Tabelle muss für den Worker lesbar sein.");let rows=parseCsv(text),model="",vehicles=[];for(let i=0;i<rows.length;i++){let a=String(rows[i]?.[0]||"").trim();if(/^\d{4}$/.test(a)){let num=Number(a),base=DATA.fleet.find(v=>Number(v.number)===num),status=normalizedVehicleStatus(rows[i]?.[10],model,num),regular=activeVehicleStatus(status)&&num!==1603;vehicles.push({number:num,label:`KOM ${num}`,model:model||base?.model||"Unbekannt",status,group:deriveVehicleGroup(model,base),regular,alternative:!!base?.alternative,large:!!base?.large,regio:!!base?.regio,advertising:String(rows[i]?.[2]||"").trim(),special:String(rows[i]?.[5]||"").trim(),sourceRow:i+1})}else if(a&&!/^(Stand |TB =|Heck =|Grün =|Orange =|Solobusse:|Gelenkbusse:|Wagennm\.|\(bei Werbungen)/i.test(a)&&!/^Statuspflege/i.test(a))model=a}if(vehicles.length<50)throw new Error(`Zu wenige Fahrzeuge erkannt (${vehicles.length}). Sync abgebrochen.`);let now=new Date().toISOString();for(let i=0;i<vehicles.length;i+=40){let chunk=vehicles.slice(i,i+40).map(v=>env.DB.prepare(`INSERT INTO vehicles(number,label,model,status,group_type,regular,alternative,large,regio,advertising,special,source_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(number) DO UPDATE SET label=excluded.label,model=excluded.model,status=excluded.status,group_type=excluded.group_type,regular=excluded.regular,alternative=excluded.alternative,large=excluded.large,regio=excluded.regio,advertising=excluded.advertising,special=excluded.special,source_row=excluded.source_row,synced_at=excluded.synced_at`).bind(v.number,v.label,v.model,v.status,v.group,v.regular?1:0,v.alternative?1:0,v.large?1:0,v.regio?1:0,v.advertising,v.special,v.sourceRow,now));await env.DB.batch(chunk)}await env.DB.prepare(`DELETE FROM vehicles WHERE synced_at<>?`).bind(now).run();let active=vehicles.filter(v=>v.regular).length;await recordFleetSync(env,{source,status:"ok",message:`${vehicles.length} Fahrzeuge aus Google Sheets synchronisiert.`,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active});return{ok:true,source,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active,syncedAt:now}}catch(e){await recordFleetSync(env,{source,status:"error",message:String(e?.message||e)});throw e}}
 async function loadFleetFromDb(env){let r=await env.DB.prepare(`SELECT * FROM vehicles ORDER BY number`).all(),rows=r.results||[];if(!rows.length)return DATA.fleet;return rows.map(x=>({number:Number(x.number),label:x.label||`KOM ${x.number}`,model:x.model||"",status:x.status||"",group:x.group_type||"solo",regular:!!x.regular,alternative:!!x.alternative,large:!!x.large,regio:!!x.regio,advertising:x.advertising||"",special:x.special||""}))}
 async function fleetStatus(env){let state=await env.DB.prepare(`SELECT * FROM fleet_sync_state WHERE id=1`).first(),counts=await env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN regular=1 THEN 1 ELSE 0 END) active,SUM(CASE WHEN regular=0 THEN 1 ELSE 0 END) unavailable FROM vehicles`).first();return{source:env.FLEET_SHEET_CSV_URL||FLEET_SHEET_DEFAULT,lastSuccessAt:state?.last_success_at||null,lastAttemptAt:state?.last_attempt_at||null,status:state?.status||"noch nicht synchronisiert",message:state?.message||"",vehicleCount:Number(counts?.total||0),activeCount:Number(counts?.active||0),unavailableCount:Number(counts?.unavailable||0)}}
-async function ensureSchema(env){await env.DB.batch([env.DB.prepare(`CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,employee_id TEXT NOT NULL,role TEXT NOT NULL,password_hash TEXT NOT NULL,salt TEXT NOT NULL,must_change INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS week_plans(monday TEXT PRIMARY KEY,version INTEGER NOT NULL,plan_json TEXT NOT NULL,generated_at TEXT NOT NULL,generated_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS objections(id INTEGER PRIMARY KEY AUTOINCREMENT,employee_id TEXT NOT NULL,employee_name TEXT NOT NULL,requested_date TEXT NOT NULL,type TEXT NOT NULL,requested_time TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'offen',admin_note TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS duty_overrides(id INTEGER PRIMARY KEY AUTOINCREMENT,employee_id TEXT NOT NULL,duty_date TEXT NOT NULL,kind TEXT NOT NULL,duty_type TEXT,depot TEXT,start_time TEXT,end_time TEXT,note TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(employee_id,duty_date))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS generation_settings(id INTEGER PRIMARY KEY CHECK(id=1),settings_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS vehicles(number INTEGER PRIMARY KEY,label TEXT NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,group_type TEXT NOT NULL,regular INTEGER NOT NULL DEFAULT 0,alternative INTEGER NOT NULL DEFAULT 0,large INTEGER NOT NULL DEFAULT 0,regio INTEGER NOT NULL DEFAULT 0,advertising TEXT,special TEXT,source_row INTEGER,synced_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS fleet_sync_state(id INTEGER PRIMARY KEY CHECK(id=1),source_url TEXT NOT NULL,last_success_at TEXT,last_attempt_at TEXT NOT NULL,status TEXT NOT NULL,message TEXT,vehicle_count INTEGER NOT NULL DEFAULT 0,active_count INTEGER NOT NULL DEFAULT 0,unavailable_count INTEGER NOT NULL DEFAULT 0)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS week_plan_versions(monday TEXT NOT NULL,version INTEGER NOT NULL,plan_json TEXT NOT NULL,generated_at TEXT NOT NULL,generated_by TEXT NOT NULL,mode TEXT NOT NULL DEFAULT 'full',note TEXT,PRIMARY KEY(monday,version))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_generation_settings(employee_id TEXT PRIMARY KEY,settings_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_records(employee_id TEXT PRIMARY KEY,first_name TEXT NOT NULL,last_name TEXT NOT NULL,name TEXT NOT NULL,position TEXT NOT NULL,business_area TEXT NOT NULL,location TEXT NOT NULL,employment TEXT NOT NULL,hours REAL NOT NULL DEFAULT 39,birth_date TEXT,start_date TEXT NOT NULL,created_at TEXT NOT NULL,created_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_lifecycle(employee_id TEXT PRIMARY KEY,birth_date TEXT,start_date TEXT,end_date TEXT,end_reason TEXT,updated_at TEXT NOT NULL,updated_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_training(employee_id TEXT PRIMARY KEY,cohort_year INTEGER NOT NULL,program TEXT NOT NULL DEFAULT 'Fachkraft im Fahrbetrieb',auto_created INTEGER NOT NULL DEFAULT 1,graduated_at TEXT,created_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS automation_state(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slot_assignments(duty_date TEXT NOT NULL,plan_version INTEGER NOT NULL,vehicle_number TEXT NOT NULL,depot TEXT NOT NULL,start_slot TEXT NOT NULL,return_slot TEXT NOT NULL,pullout_min INTEGER,pullin_min INTEGER,created_at TEXT NOT NULL,PRIMARY KEY(duty_date,plan_version,vehicle_number))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slots(slot_id TEXT PRIMARY KEY,depot TEXT NOT NULL,slot_type TEXT NOT NULL,length_m REAL NOT NULL,x REAL NOT NULL,y REAL NOT NULL,z REAL NOT NULL,heading REAL NOT NULL,map_name TEXT,object_path TEXT,synced_at TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS vehicle_slot_history(vehicle_number TEXT NOT NULL,effective_date TEXT NOT NULL,slot_id TEXT NOT NULL,depot TEXT NOT NULL,plan_version INTEGER NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(vehicle_number,effective_date,plan_version))`)] );await env.DB.prepare(`INSERT OR IGNORE INTO week_plan_versions(monday,version,plan_json,generated_at,generated_by,mode,note) SELECT monday,version,plan_json,generated_at,generated_by,'legacy','Bestehende aktive Version übernommen' FROM week_plans`).run()}
+async function ensureSchema(env){await env.DB.batch([env.DB.prepare(`CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,employee_id TEXT NOT NULL,role TEXT NOT NULL,password_hash TEXT NOT NULL,salt TEXT NOT NULL,must_change INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS week_plans(monday TEXT PRIMARY KEY,version INTEGER NOT NULL,plan_json TEXT NOT NULL,generated_at TEXT NOT NULL,generated_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS objections(id INTEGER PRIMARY KEY AUTOINCREMENT,employee_id TEXT NOT NULL,employee_name TEXT NOT NULL,requested_date TEXT NOT NULL,type TEXT NOT NULL,requested_time TEXT,message TEXT,status TEXT NOT NULL DEFAULT 'offen',admin_note TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS duty_overrides(id INTEGER PRIMARY KEY AUTOINCREMENT,employee_id TEXT NOT NULL,duty_date TEXT NOT NULL,kind TEXT NOT NULL,duty_type TEXT,depot TEXT,start_time TEXT,end_time TEXT,note TEXT,created_by TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(employee_id,duty_date))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS generation_settings(id INTEGER PRIMARY KEY CHECK(id=1),settings_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS vehicles(number INTEGER PRIMARY KEY,label TEXT NOT NULL,model TEXT NOT NULL,status TEXT NOT NULL,group_type TEXT NOT NULL,regular INTEGER NOT NULL DEFAULT 0,alternative INTEGER NOT NULL DEFAULT 0,large INTEGER NOT NULL DEFAULT 0,regio INTEGER NOT NULL DEFAULT 0,advertising TEXT,special TEXT,source_row INTEGER,synced_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS fleet_sync_state(id INTEGER PRIMARY KEY CHECK(id=1),source_url TEXT NOT NULL,last_success_at TEXT,last_attempt_at TEXT NOT NULL,status TEXT NOT NULL,message TEXT,vehicle_count INTEGER NOT NULL DEFAULT 0,active_count INTEGER NOT NULL DEFAULT 0,unavailable_count INTEGER NOT NULL DEFAULT 0)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS week_plan_versions(monday TEXT NOT NULL,version INTEGER NOT NULL,plan_json TEXT NOT NULL,generated_at TEXT NOT NULL,generated_by TEXT NOT NULL,mode TEXT NOT NULL DEFAULT 'full',note TEXT,PRIMARY KEY(monday,version))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_generation_settings(employee_id TEXT PRIMARY KEY,settings_json TEXT NOT NULL,updated_by TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_records(employee_id TEXT PRIMARY KEY,first_name TEXT NOT NULL,last_name TEXT NOT NULL,name TEXT NOT NULL,position TEXT NOT NULL,business_area TEXT NOT NULL,location TEXT NOT NULL,employment TEXT NOT NULL,hours REAL NOT NULL DEFAULT 39,birth_date TEXT,start_date TEXT NOT NULL,created_at TEXT NOT NULL,created_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_lifecycle(employee_id TEXT PRIMARY KEY,birth_date TEXT,start_date TEXT,end_date TEXT,end_reason TEXT,updated_at TEXT NOT NULL,updated_by TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS employee_training(employee_id TEXT PRIMARY KEY,cohort_year INTEGER NOT NULL,program TEXT NOT NULL DEFAULT 'Fachkraft im Fahrbetrieb',auto_created INTEGER NOT NULL DEFAULT 1,graduated_at TEXT,created_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS automation_state(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at TEXT NOT NULL)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slot_assignments(duty_date TEXT NOT NULL,plan_version INTEGER NOT NULL,vehicle_number TEXT NOT NULL,depot TEXT NOT NULL,start_slot TEXT NOT NULL,return_slot TEXT NOT NULL,pullout_min INTEGER,pullin_min INTEGER,created_at TEXT NOT NULL,PRIMARY KEY(duty_date,plan_version,vehicle_number))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_slots(slot_id TEXT PRIMARY KEY,depot TEXT NOT NULL,slot_type TEXT NOT NULL,length_m REAL NOT NULL,x REAL NOT NULL,y REAL NOT NULL,z REAL NOT NULL,heading REAL NOT NULL,map_name TEXT,object_path TEXT,synced_at TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1)`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS vehicle_slot_history(vehicle_number TEXT NOT NULL,effective_date TEXT NOT NULL,slot_id TEXT NOT NULL,depot TEXT NOT NULL,plan_version INTEGER NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(vehicle_number,effective_date,plan_version))`),env.DB.prepare(`CREATE TABLE IF NOT EXISTS depot_sync_pairing(id INTEGER PRIMARY KEY CHECK(id=1),token_hash TEXT NOT NULL,paired_at TEXT NOT NULL,last_seen_at TEXT NOT NULL,source TEXT)`)] );await env.DB.prepare(`INSERT OR IGNORE INTO week_plan_versions(monday,version,plan_json,generated_at,generated_by,mode,note) SELECT monday,version,plan_json,generated_at,generated_by,'legacy','Bestehende aktive Version übernommen' FROM week_plans`).run()}
 function json(data,status=200,headers={}){return new Response(JSON.stringify(data),{status,headers:{"content-type":"application/json; charset=utf-8",...headers}})}
 function cookieToken(req){let c=req.headers.get("cookie")||"",m=c.match(/(?:^|;\s*)rogis_session=([^;]+)/);return m?decodeURIComponent(m[1]):null}
 async function sessionUser(req,env){let tok=cookieToken(req);if(!tok)return null;let s=await env.DB.prepare(`SELECT username,expires_at FROM sessions WHERE token=?`).bind(tok).first();if(!s||new Date(s.expires_at)<new Date())return null;let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(s.username).first();if(!u)return null;let emp=EMP_BY_ID.get(u.employee_id);if(!emp||employeeLifecycleStatus(emp,new Date())!=="active")return null;return{...u,emp}}
@@ -252,9 +388,9 @@ async function savePlanVersion(env,plan,by,mode="full",note="",activate=true){
   await assignDepotSlotsToPlan(plan,env);
   const now=new Date().toISOString(),body=JSON.stringify(plan);
   await env.DB.prepare(`INSERT OR REPLACE INTO week_plan_versions(monday,version,plan_json,generated_at,generated_by,mode,note) VALUES(?,?,?,?,?,?,?)`).bind(plan.monday,plan.version,body,now,by,mode,note).run();
-  for(const [d,day] of Object.entries(plan.days||{})){for(const a of Object.values(day.depotSlots||{})){await env.DB.prepare(`INSERT OR REPLACE INTO depot_slot_assignments(duty_date,plan_version,vehicle_number,depot,start_slot,return_slot,pullout_min,pullin_min,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(d,plan.version,a.vehicleNumber,a.depot,a.startSlot,a.returnSlot,a.pulloutMin,a.pullinMin,now).run()}for(const st of Object.values(day.vehicleSlotState||{})){await env.DB.prepare(`INSERT OR REPLACE INTO vehicle_slot_history(vehicle_number,effective_date,slot_id,depot,plan_version,created_at) VALUES(?,?,?,?,?,?)`).bind(st.vehicleNumber,d,st.slotId,st.depot,plan.version,now).run()}}
   if(activate){
     await env.DB.prepare(`INSERT INTO week_plans(monday,version,plan_json,generated_at,generated_by) VALUES(?,?,?,?,?) ON CONFLICT(monday) DO UPDATE SET version=excluded.version,plan_json=excluded.plan_json,generated_at=excluded.generated_at,generated_by=excluded.generated_by`).bind(plan.monday,plan.version,body,now,by).run();
+    await persistDepotPlanState(env,plan,now);
   }
   return plan;
 }
@@ -376,8 +512,7 @@ async function vehicleDayRows(plan,date,q,env){
      byVehicle.set(key,row)
    }
  }
- let daySlotLookup=(day)=>new Map(Object.values(day?.depotSlots||{}).map(a=>[String(a.vehicleNumber),a])); let rows=[...byVehicle.values()]; let slotByVehicle=daySlotLookup(plan?.days?.[date]);for(const row of byVehicle.values()){let vn=String((row.vehicle.match(/\d+/)||[''])[0]),a=slotByVehicle.get(vn);row.startSlot=a?.startSlot||'';row.returnSlot=a?.returnSlot||''}
-
+ let rows=[...byVehicle.values()];
  for(const row of rows){
    row.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));
    let ded=[];for(const x of row.drivers){let k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join('|');if(!ded.some(y=>y._k===k))ded.push({...x,_k:k})}row.drivers=ded.map(({_k,...x})=>x);
@@ -385,8 +520,17 @@ async function vehicleDayRows(plan,date,q,env){
  }
  let filtered=rows.filter(row=>{if(!qq)return true;let hay=[row.vehicle,row.model,row.used?"im einsatz":"nicht eingesetzt",row.runs.join(" "),row.startTime,row.endTime,row.startLoc,row.endLoc,row.lines.join(" "),...row.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
  filtered.sort((a,b)=>{let an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
- let usedVehicles=rows.filter(r=>r.used).length,activeVehicles=rows.length;
- return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles)}
+ const assignments=new Map(Object.values(plan?.days?.[date]?.depotSlots||{}).map(a=>[String(a.vehicleNumber),a]));
+ for(const row of rows){
+   const vn=String((String(row.vehicle).match(/\\d+/)||[""])[0]),a=assignments.get(vn);
+   if(a){row.startDepot=a.startDepot||"";row.startSlot=a.startSlot||"";row.endDepot=a.endDepot||"";row.endSlot=a.endSlot||a.returnSlot||"";row.returnSlot=row.endSlot;row.slotType=a.slotType||""}
+ }
+ filtered=rows.filter(row=>{if(!qq)return true;let hay=[row.vehicle,row.model,row.used?"im einsatz":"nicht eingesetzt",row.runs.join(" "),row.startTime,row.endTime,row.startLoc,row.endLoc,row.startSlot,row.endSlot,row.startDepot,row.endDepot,row.lines.join(" "),...row.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
+ filtered.sort((a,b)=>{let an=Number((a.vehicle.match(/\\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
+ let usedVehicles=rows.filter(r=>r.used).length,activeVehicles=rows.length,rr=depotReservationsForDay(plan?.days?.[date]);
+ const slots=await loadDepotSlots(env),occupancy={};
+ for(const depot of ["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"])occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slots.filter(x=>x.depot===depot).length};
+ return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:assignments.size>=activeVehicles,missingVehicleAssignments:rows.filter(r=>!r.startSlot||!r.endSlot).map(r=>Number((String(r.vehicle).match(/\\d+/)||[0])[0])).filter(Boolean),planVersion:Number(plan?.version||0)}
 }
 const ANNUAL_VACATION_DAYS=30;
 async function vacationDaysUsed(env,employeeId,year){let y=Number(year),start=`${y}-01-01`,end=`${y}-12-31`,r=await env.DB.prepare(`SELECT COUNT(DISTINCT duty_date) c FROM duty_overrides WHERE employee_id=? AND kind='Urlaub' AND duty_date>=? AND duty_date<=?`).bind(employeeId,start,end).first();return Number(r?.c||0)}
@@ -438,11 +582,32 @@ function openOmsiDayPayload(plan,date){
  const slotPlan=Object.values(day.depotSlots||{});return{ok:true,date,dayType:dt,timetableLine,planVersion:Number(plan?.version||0),assignmentCount:assignments.length,assignments,slotPlan,note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. TL/GR-Fremdleistungen werden absichtlich nicht überschrieben."};
 }
 
+async function openOmsiDepotDayPayloadV6425(plan,date,env){
+ plan=await ensureDepotPlanState(env,plan);
+ const j=await vehicleDayRows(plan,date,"",env);
+ return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:!!j.depotAssignmentsFixed,missingVehicleAssignments:j.missingVehicleAssignments||[],slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},slotReservations:j.slotReservations||{},slotConflicts:j.slotConflicts||[],vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||r.returnSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
+}
+
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.24",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.25",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
- if(p==="/api/openomsi/slots"&&req.method==="POST"){let b=await req.json(),slots=Array.isArray(b.slots)?b.slots:[],mapName=String(b.map||"");if(!slots.length)return json({error:"Keine Depot-Slots im Scan enthalten."},400);let now=new Date().toISOString();await env.DB.prepare(`UPDATE depot_slots SET active=0`).run();let accepted=0;for(const x of slots){let id=String(x.id||"").trim().toUpperCase(),type=String(x.type||"").trim().toUpperCase();if(!/^[MSH]\d{3,4}$/.test(id)||!/^(DS|DG|ES|EG)$/.test(type))continue;let depot=id.startsWith("S")?"Spryndorf":id.startsWith("H")?"Hechem":"Mitte",len=(type.endsWith("G")?18:12);await env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(id,depot,type,len,Number(x.x||0),Number(x.y||0),Number(x.z||0),Number(x.heading||0),mapName,String(x.objectPath||""),now).run();accepted++}return json({ok:true,accepted,map:mapName,syncedAt:now})}
+ if(p==="/api/openomsi/depot-slots"){
+   if(req.method==="POST"){
+     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Sync-Token fehlt oder stimmt nicht. Das Control Centre koppelt den Token beim ersten Sync automatisch."},401);
+     let b=await req.json();try{return json(await syncDepotSlotsV6425(env,b.slots,b.source||"ROGIS Control Centre"))}catch(e){return json({error:e?.message||String(e)},400)}
+   }
+   if(req.method==="GET"){
+     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Sync-Token fehlt oder stimmt nicht."},401);
+     const slots=await loadDepotSlots(env);return json({ok:true,slotCount:slots.length,slots});
+   }
+   return json({error:"Methode nicht erlaubt."},405);
+ }
+ if(p==="/api/openomsi/depot-day"&&req.method==="GET"){
+   let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
+   let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-depot-sync",false);
+   return json(await openOmsiDepotDayPayloadV6425(plan,date,env),200,{"cache-control":"no-store"});
+ }
  if(p==="/api/login"&&req.method==="POST"){let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();let emp=EMP_BY_ID.get(u.employee_id);if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);let ls=employeeLifecycleStatus(emp,new Date());if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`})}
  if(p==="/api/logout"&&req.method==="POST"){let tok=cookieToken(req);if(tok)await env.DB.prepare(`DELETE FROM sessions WHERE token=?`).bind(tok).run();return json({ok:true},200,{"set-cookie":"rogis_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"})}
  let su=await sessionUser(req,env);if(!su)return json({error:"Nicht angemeldet."},401);let emp=su.emp;
@@ -485,7 +650,7 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
  if(p==="/api/admin/plan-versions"&&req.method==="GET"){let mk=String(url.searchParams.get("monday")||""),active=await env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first(),r=await env.DB.prepare(`SELECT monday,version,generated_at,generated_by,mode,note FROM week_plan_versions WHERE monday=? ORDER BY version DESC`).bind(mk).all();return json({activeVersion:Number(active?.version||0),versions:r.results||[]})}
  if(p==="/api/admin/generate-draft"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(mk))return json({error:"Ungültige Woche."},400);let plan=await createPlanDraft(env,mk,su.username);return json({ok:true,version:plan.version,message:`Planentwurf Version ${plan.version} wurde gespeichert. Der aktuell aktive Plan bleibt unverändert.`})}
  if(p==="/api/admin/delete-version"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),ver=Number(b.version);if(!/^\d{4}-\d{2}-\d{2}$/.test(mk)||!Number.isInteger(ver)||ver<1)return json({error:"Woche oder Planversion ungültig."},400);let active=await env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first();if(Number(active?.version||0)===ver)return json({error:`Version ${ver} ist aktuell aktiv und kann nicht gelöscht werden. Aktiviere zuerst eine andere Version.`},409);let found=await env.DB.prepare(`SELECT version FROM week_plan_versions WHERE monday=? AND version=?`).bind(mk,ver).first();if(!found)return json({error:"Planversion nicht gefunden."},404);await env.DB.prepare(`DELETE FROM week_plan_versions WHERE monday=? AND version=?`).bind(mk,ver).run();return json({ok:true,message:`Planentwurf Version ${ver} wurde gelöscht. Der aktive Plan wurde nicht verändert.`})}
- if(p==="/api/admin/activate-version"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),ver=Number(b.version),r=await env.DB.prepare(`SELECT * FROM week_plan_versions WHERE monday=? AND version=?`).bind(mk,ver).first();if(!r)return json({error:"Planversion nicht gefunden."},404);await env.DB.prepare(`INSERT INTO week_plans(monday,version,plan_json,generated_at,generated_by) VALUES(?,?,?,?,?) ON CONFLICT(monday) DO UPDATE SET version=excluded.version,plan_json=excluded.plan_json,generated_at=excluded.generated_at,generated_by=excluded.generated_by`).bind(mk,ver,r.plan_json,new Date().toISOString(),su.username).run();return json({ok:true,message:`Version ${ver} ist jetzt aktiv.`})}
+ if(p==="/api/admin/activate-version"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),ver=Number(b.version),r=await env.DB.prepare(`SELECT * FROM week_plan_versions WHERE monday=? AND version=?`).bind(mk,ver).first();if(!r)return json({error:"Planversion nicht gefunden."},404);let plan=JSON.parse(r.plan_json);await assignDepotSlotsToPlan(plan,env);let now=new Date().toISOString(),body=JSON.stringify(plan);await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,mk,ver).run();await env.DB.prepare(`INSERT INTO week_plans(monday,version,plan_json,generated_at,generated_by) VALUES(?,?,?,?,?) ON CONFLICT(monday) DO UPDATE SET version=excluded.version,plan_json=excluded.plan_json,generated_at=excluded.generated_at,generated_by=excluded.generated_by`).bind(mk,ver,body,now,su.username).run();await persistDepotPlanState(env,plan,now);return json({ok:true,message:`Version ${ver} ist jetzt aktiv. Die Stellplätze wurden passend zum tatsächlichen letzten Fahrzeugstand fortgeschrieben.`})}
  if(p==="/api/admin/employee-generation-settings"&&req.method==="GET"){let eid=String(url.searchParams.get("employeeId")||"");if(!EMP_BY_ID.get(eid))return json({error:"Mitarbeiter nicht gefunden."},404);return json(await getEmployeeGenerationSettings(env,eid))}
  if(p==="/api/admin/employee-generation-settings"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||"");if(!EMP_BY_ID.get(eid))return json({error:"Mitarbeiter nicht gefunden."},404);if(b.action==="delete"){await env.DB.prepare(`DELETE FROM employee_generation_settings WHERE employee_id=?`).bind(eid).run();return json({ok:true,message:"Individuelle Kriterien entfernt. Für diese Person gelten nun keine persönlichen Zeit- oder Mengenlimits."})}let settings=sanitizeEmployeeGenerationSettings(b),now=new Date().toISOString();if(!Object.keys(settings).length){await env.DB.prepare(`DELETE FROM employee_generation_settings WHERE employee_id=?`).bind(eid).run();return json({ok:true,settings:{},message:"Keine persönlichen Kriterien gesetzt. Die Person kann zeitlich frei eingeplant werden."})}await env.DB.prepare(`INSERT INTO employee_generation_settings(employee_id,settings_json,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(employee_id) DO UPDATE SET settings_json=excluded.settings_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(eid,JSON.stringify(settings),su.username,now).run();return json({ok:true,settings,message:"Individuelle Kriterien gespeichert. Nur diese Person wird dadurch eingeschränkt; Mitarbeiter ohne eigene Kriterien bleiben unbegrenzt verfügbar."})}
  if(p==="/api/admin/generate-employee"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),eid=String(b.employeeId||""),baseRow=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mk).first();if(!baseRow)return json({error:"Für diese Woche existiert noch kein aktiver Plan."},400);let plan=await regenerateEmployeeInPlan(env,JSON.parse(baseRow.plan_json),eid,su.username);return json({ok:true,version:plan.version,message:`${EMP_BY_ID.get(eid)?.name||eid} neu generiert. Version ${plan.version} wurde automatisch aktiviert.`})}

@@ -5,9 +5,11 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - fix/depot-system-v6425
     paths:
       - "control-centre/**"
       - ".github/workflows/control-centre-build.yml"
+      - "src/index.js"
   workflow_dispatch:
 
 jobs:
@@ -18,6 +20,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Check Dienstplan Worker syntax
+        run: node --check src/index.js
       - name: Publish Windows x64
         run: dotnet publish control-centre/ROGIS.ControlCentre.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o control-centre-publish
       - name: Upload Control Centre

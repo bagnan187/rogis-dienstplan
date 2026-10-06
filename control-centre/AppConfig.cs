@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace ROGIS.ControlCentre;
@@ -17,9 +18,19 @@ public sealed class AppConfig
 
     public static AppConfig Load()
     {
-        if (!File.Exists(ConfigPath)) return new AppConfig();
-        return JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath),
+        AppConfig cfg;
+        if (!File.Exists(ConfigPath)) cfg = new AppConfig();
+        else cfg = JsonSerializer.Deserialize<AppConfig>(File.ReadAllText(ConfigPath),
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new AppConfig();
+        cfg.EnsureDepotSyncToken();
+        return cfg;
+    }
+
+    public void EnsureDepotSyncToken()
+    {
+        if (!string.IsNullOrWhiteSpace(DepotSyncToken)) return;
+        DepotSyncToken = "rogis-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        Save();
     }
 
     public void Save() =>
