@@ -1,5 +1,5 @@
 [friendlyname]
-ROGIS Stellplatz ES - Elektro Solo
+ROGIS Stellplatz Solo Elektro (ES) - Elektro Solo
 
 [groups]
 2
@@ -17,7 +17,7 @@ DIN-Ziffern eng 1
 255
 
 [mesh]
-ROGIS_DepotSlot_ES.x
+model\ROGIS_DepotSlot_ES.x
 
 [matl]
 slot_text.bmp
