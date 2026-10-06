@@ -138,7 +138,7 @@ function vehicleNeedsArticulated(v){return !!v?.large||String(v?.group||v?.group
 function vehicleNeedsElectric(v){return !!v?.alternative||/(electric|elektro|e[ -]?lion|elnlc|lion.?s city e|ecitaro|e-citaro)/i.test(String(v?.model||""))}
 function slotTypeForVehicle(v){return vehicleNeedsArticulated(v)?"G":"S"}
 const ECITARO_G_HALL_ASSIGNMENTS=Object.freeze({"2540":"M001","2541":"M002","2542":"M003","2543":"M004","2544":"M005","2545":"M006","2546":"M007","2547":"M008","2548":"M009","2549":"M010"});
-const ECITARO_G_HALL_SLOTS=new Set(["M001","M002","M003","M004","M005","M006","M007","M008","M009","M010","M011","M012"]);
+const ECITARO_G_HALL_SLOTS=new Set(Object.values(ECITARO_G_HALL_ASSIGNMENTS));
 function isECitaroGHallVehicle(v){return Object.prototype.hasOwnProperty.call(ECITARO_G_HALL_ASSIGNMENTS,String(v?.number||""))}
 function fixedHallSlotFor(v){return ECITARO_G_HALL_ASSIGNMENTS[String(v?.number||"")]||null}
 function slotAllowedForVehicle(slot,v){
@@ -150,15 +150,26 @@ function slotFitsVehicle(slot,v){
  if(!slotAllowedForVehicle(slot,v))return false;
  const need=slotTypeForVehicle(v),have=String(slot?.type||slot?.slot_type||"").toUpperCase();
  // Depotbelegung unterscheidet normal nur nach Fahrzeuglänge. D/E ist reine Objektbezeichnung.
- // M001-M012 sind jedoch exklusiv für die eCitaro G reserviert; 2540-2549 haben M001-M010 fest.
+ // Nur die tatsächlich fest zugewiesenen Hallenplätze M001-M010 sind exklusiv reserviert.
+ // M011/M012 bleiben normale nutzbare Gelenkplätze.
  return need==="G"?have.endsWith("G"):have.endsWith("S")||have.endsWith("G");
 }
 async function loadDepotSlots(env){
  const r=await env.DB.prepare(`SELECT slot_id id,depot,slot_type type,length_m length,x,y,z,heading,map_name mapName,object_path objectPath,synced_at syncedAt FROM depot_slots WHERE active=1 ORDER BY slot_id`).all();
  return (r.results||[]).map(x=>({...x,id:String(x.id||"").toUpperCase(),depot:slotDepotName(x.depot),type:String(x.type||"").toUpperCase()}));
 }
-async function latestVehicleSlotBefore(env,vehicleNumber,date){
- return await env.DB.prepare(`SELECT slot_id slotId,depot,effective_date effectiveDate,plan_version planVersion FROM vehicle_slot_history WHERE vehicle_number=? AND effective_date<? ORDER BY effective_date DESC,plan_version DESC LIMIT 1`).bind(String(vehicleNumber),date).first();
+async function latestVehicleSlotsBefore(env,date){
+ const r=await env.DB.prepare(`
+   SELECT vehicle_number vehicleNumber,slot_id slotId,depot,effective_date effectiveDate,plan_version planVersion
+   FROM (
+     SELECT vehicle_number,slot_id,depot,effective_date,plan_version,
+            ROW_NUMBER() OVER(PARTITION BY vehicle_number ORDER BY effective_date DESC,plan_version DESC) rn
+     FROM vehicle_slot_history
+     WHERE effective_date<?
+   )
+   WHERE rn=1
+ `).bind(date).all();
+ return new Map((r.results||[]).map(x=>[String(x.vehicleNumber),x]));
 }
 function slotClock(v,fallback){let m=String(v||"").match(/^(\d{1,2}):(\d{2})$/);return m?Number(m[1])*60+Number(m[2]):fallback}
 function reserveInterval(res,slotId,from,to,vehicle,kind){
@@ -209,6 +220,7 @@ async function assignDepotSlotsToPlan(plan,env){
  if(!slots.length)throw new Error("Keine Depot-Slots vom OMSI-Editor vorhanden. Im Control Centre zuerst die beschrifteten Slot-Cubes synchronisieren.");
  const byId=new Map(slots.map(x=>[x.id,x])),fleet=await activeDepotFleet(env),dates=Object.keys(plan.days||{}).sort(),state=new Map(),H=48*60;
  if(!dates.length)return plan;
+ const previousSlots=await latestVehicleSlotsBefore(env,dates[0]),seedOccupied=new Set();
 
  // Seed every active bus from its last REAL saved end location before this plan.
  for(const v of fleet){
@@ -217,10 +229,10 @@ async function assignDepotSlotsToPlan(plan,env){
      const fixed=fixedHallSlotFor(v),obj=byId.get(fixed);
      if(!obj)throw new Error(`Fester Hallenstellplatz ${fixed} für eCitaro G KOM ${vn} fehlt im OMSI-Editor.`);
      if(!String(obj.type||"").endsWith("G"))throw new Error(`Fester Hallenstellplatz ${fixed} für eCitaro G KOM ${vn} muss als Gelenk-Slot (EG oder DG) angelegt sein.`);
-     state.set(vn,fixed);continue;
+     state.set(vn,fixed);seedOccupied.add(fixed);continue;
    }
-   const prev=await latestVehicleSlotBefore(env,vn,dates[0]),obj=prev?.slotId?byId.get(String(prev.slotId).toUpperCase()):null;
-   if(obj&&slotFitsVehicle(obj,v))state.set(vn,obj.id);
+   const prev=previousSlots.get(vn),obj=prev?.slotId?byId.get(String(prev.slotId).toUpperCase()):null;
+   if(obj&&slotFitsVehicle(obj,v)&&!seedOccupied.has(obj.id)){state.set(vn,obj.id);seedOccupied.add(obj.id)}
  }
 
  // Initial placement only for buses without any prior location. Prefer the depot of their first duty.
@@ -239,7 +251,10 @@ async function assignDepotSlotsToPlan(plan,env){
      const c=slots.filter(x=>x.depot===depot&&slotFitsVehicle(x,v)&&!occupied.has(x.id)).sort((a,b)=>a.id.localeCompare(b.id,"de",{numeric:true}));
      if(c.length){chosen=c[0];break}
    }
-   if(!chosen)throw new Error(`Kein freier passender Startstellplatz für KOM ${vn} vorhanden.`);
+   if(!chosen){
+     const usable=slots.filter(x=>slotFitsVehicle(x,v)).length,freeUsable=slots.filter(x=>slotFitsVehicle(x,v)&&!occupied.has(x.id)).length;
+     throw new Error(`Kein freier passender Startstellplatz für KOM ${vn} vorhanden. Aktive Busse: ${fleet.length}, aktive Slots: ${slots.length}, für diesen Wagen nutzbar: ${usable}, davon frei: ${freeUsable}.`);
+   }
    state.set(vn,chosen.id);occupied.add(chosen.id);
  }
 
@@ -296,14 +311,15 @@ async function assignDepotSlotsToPlan(plan,env){
  return plan;
 }
 async function persistDepotPlanState(env,plan,now=new Date().toISOString()){
- for(const [d,day] of Object.entries(plan.days||{})){
-   for(const a of Object.values(day.depotSlots||{})){
-     await env.DB.prepare(`INSERT OR REPLACE INTO depot_slot_assignments(duty_date,plan_version,vehicle_number,depot,start_slot,return_slot,pullout_min,pullin_min,created_at) VALUES(?,?,?,?,?,?,?,?,?)`).bind(d,plan.version,a.vehicleNumber,a.endDepot||a.startDepot||"",a.startSlot,a.endSlot||a.returnSlot,a.pulloutMin,a.pullinMin,now).run();
-   }
-   for(const st of Object.values(day.vehicleSlotState||{})){
-     await env.DB.prepare(`INSERT OR REPLACE INTO vehicle_slot_history(vehicle_number,effective_date,slot_id,depot,plan_version,created_at) VALUES(?,?,?,?,?,?)`).bind(st.vehicleNumber,d,st.slotId,st.depot,plan.version,now).run();
-   }
+ // Die vollständige feste Belegung pro Datum+Planversion steckt bereits im gespeicherten plan_json.
+ // Für die Folgewoche benötigen wir separat nur den realen Endzustand des letzten Tages.
+ const dates=Object.keys(plan.days||{}).sort();
+ if(!dates.length)return;
+ const d=dates[dates.length-1],day=plan.days[d],stmts=[];
+ for(const st of Object.values(day?.vehicleSlotState||{})){
+   stmts.push(env.DB.prepare(`INSERT OR REPLACE INTO vehicle_slot_history(vehicle_number,effective_date,slot_id,depot,plan_version,created_at) VALUES(?,?,?,?,?,?)`).bind(st.vehicleNumber,d,st.slotId,st.depot,plan.version,now));
  }
+ for(let i=0;i<stmts.length;i+=80)await env.DB.batch(stmts.slice(i,i+80));
 }
 async function buildPartialDepotPreviewV6431(plan,env,slots=null,fleet=null){
  slots=slots||await loadDepotSlots(env);fleet=fleet||await activeDepotFleet(env);
@@ -514,13 +530,13 @@ function dutyFitsCriteria(segs,cfg){if(!segs?.length)return true;let m=dutyMetri
 function reassignSegments(segs,emp){return(segs||[]).map(x=>({...x,employeeId:emp.id,employeeName:emp.name}))}
 
 async function savePlanVersion(env,plan,by,mode="full",note="",activate=true){
-  const depotSlots=await loadDepotSlots(env);
-  if(depotSlots.length)await assignDepotSlotsToPlan(plan,env);
+  // Dienstplangenerierung und Hofplanung bewusst trennen:
+  // Der Website-Request speichert zuerst schnell den Dienstplan. Die feste Hofbelegung
+  // wird danach bei Wageneinsatz/openOMSI lazy für genau diese Planversion ergänzt.
   const now=new Date().toISOString(),body=JSON.stringify(plan);
   await env.DB.prepare(`INSERT OR REPLACE INTO week_plan_versions(monday,version,plan_json,generated_at,generated_by,mode,note) VALUES(?,?,?,?,?,?,?)`).bind(plan.monday,plan.version,body,now,by,mode,note).run();
   if(activate){
     await env.DB.prepare(`INSERT INTO week_plans(monday,version,plan_json,generated_at,generated_by) VALUES(?,?,?,?,?) ON CONFLICT(monday) DO UPDATE SET version=excluded.version,plan_json=excluded.plan_json,generated_at=excluded.generated_at,generated_by=excluded.generated_by`).bind(plan.monday,plan.version,body,now,by).run();
-    if(depotSlots.length)await persistDepotPlanState(env,plan,now);
   }
   return plan;
 }
@@ -741,7 +757,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.35",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.37",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){

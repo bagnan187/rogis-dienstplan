@@ -1,0 +1,8 @@
+ROGIS Backend v6.4.37 – Depotkapazität + Worker-Limit Hotfix
+
+- M011/M012 sind nicht mehr fälschlich exklusiv für eCitaro G gesperrt; exklusiv bleiben nur die tatsächlich fest belegten M001-M010.
+- Normale Dienstplan-Generierung berechnet nicht mehr im selben Request die komplette Hofbelegung. Dadurch entfällt der teure Zusatzpfad, der Cloudflare Error 1102 auslösen konnte.
+- Hofbelegung wird weiterhin fest in der jeweiligen Planversion gespeichert, aber lazy über Wageneinsatz/openOMSI ergänzt.
+- Vorherige Fahrzeug-Endstellplätze werden mit einer einzigen D1-Abfrage statt einer Abfrage pro Bus geladen.
+- Für die Wochenfortschreibung wird nur noch der Endzustand des letzten Tages separat in vehicle_slot_history persistiert und in Batches geschrieben.
+- Kapazitätsfehler nennen jetzt aktive Bus-/Slotzahlen zur Diagnose.
