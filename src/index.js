@@ -445,6 +445,64 @@ async function applyDepotSlotsToRows(rows,date,env){
  }
  return{rows,occupancy,slotCount:slots.length,reservations:reservationSummary(reservations),slotConflicts:conflicts};
 }
+
+function depotVehicleNumber(label){return Number((String(label||"").match(/\d+/)||[0])[0])||0}
+async function loadFixedDepotAssignments(env,date,planVersion){
+ const r=await env.DB.prepare(`SELECT * FROM depot_vehicle_assignments WHERE service_date=? AND plan_version=? ORDER BY vehicle_number`).bind(date,Number(planVersion||0)).all();
+ return r.results||[];
+}
+async function saveFixedDepotAssignments(env,date,planVersion,slotResult){
+ const now=new Date().toISOString(),HORIZON=48*60;
+ const stmts=[];
+ for(const row of slotResult.rows||[]){
+   const n=depotVehicleNumber(row.vehicle);if(!n)continue;
+   const depart=row.used?Math.max(1,depotClockMinutes(row.startTime,1)):HORIZON;
+   const arrive=row.used?Math.max(depart,depotClockMinutes(row.endTime,depart)):0;
+   stmts.push(env.DB.prepare(`INSERT OR REPLACE INTO depot_vehicle_assignments(service_date,plan_version,vehicle_number,vehicle_label,used,slot_type,start_depot,start_slot,start_from,start_to,end_depot,end_slot,end_from,end_to,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(date,Number(planVersion||0),n,String(row.vehicle||('KOM '+n)),row.used?1:0,row.slotType||null,row.startDepot||null,row.startSlot||null,0,row.used?depart:HORIZON,row.endDepot||null,row.endSlot||null,row.used?arrive:0,HORIZON,now));
+ }
+ for(let i=0;i<stmts.length;i+=80)await env.DB.batch(stmts.slice(i,i+80));
+}
+function fixedDepotResult(rows,stored,slots){
+ const byNum=new Map(stored.map(x=>[Number(x.vehicle_number),x])),reservations=new Map(),missing=[];
+ for(const row of rows){
+   const n=depotVehicleNumber(row.vehicle),a=byNum.get(n);
+   if(!a){row.startDepot=null;row.startSlot=null;row.endDepot=null;row.endSlot=null;row.slotType=vehicleSlotNeed({model:row.model,group:/gelenk/i.test(row.model||"")?"artic":"solo"});missing.push(n);continue}
+   row.startDepot=a.start_depot||null;row.startSlot=a.start_slot||null;row.endDepot=a.end_depot||null;row.endSlot=a.end_slot||null;row.slotType=a.slot_type||null;
+   row.depotAssignmentLocked=true;row.depotAssignmentPlanVersion=Number(a.plan_version||0);
+   if(a.used){
+     if(a.start_slot)reserveSlotInterval(reservations,a.start_slot,Number(a.start_from||0),Number(a.start_to||0),row.vehicle,'start');
+     if(a.end_slot)reserveSlotInterval(reservations,a.end_slot,Number(a.end_from||0),Number(a.end_to||48*60),row.vehicle,'end');
+   }else if(a.start_slot)reserveSlotInterval(reservations,a.start_slot,0,48*60,row.vehicle,'idle');
+ }
+ const conflicts=[];
+ for(const [slotId,list] of reservations){
+   const sorted=[...list].sort((a,b)=>a.from-b.from);
+   for(let i=1;i<sorted.length;i++)if(Math.max(sorted[i-1].from,sorted[i].from)<Math.min(sorted[i-1].to,sorted[i].to))conflicts.push({slotId,a:sorted[i-1],b:sorted[i]});
+ }
+ const occupancy={};
+ for(const name of ['Betriebshof Mitte','Betriebshof Spryndorf','Betriebshof Hechem'])occupancy[name]={
+   parked:rows.filter(r=>!r.used&&r.startDepot===name).length,
+   starts:rows.filter(r=>r.used&&r.startDepot===name).length,
+   returns:rows.filter(r=>r.used&&r.endDepot===name).length,
+   slots:slots.filter(s=>s.depot===name).length
+ };
+ return{rows,occupancy,slotCount:slots.length,reservations:reservationSummary(reservations),slotConflicts:conflicts,fixed:true,missingVehicleAssignments:missing.filter(Boolean)};
+}
+async function fixedDepotSlotsForRows(plan,rows,date,env){
+ const version=Number(plan?.version||0),slots=await loadDepotSlots(env);
+ let stored=await loadFixedDepotAssignments(env,date,version);
+ if(stored.length)return fixedDepotResult(rows,stored,slots);
+ const generated=await applyDepotSlotsToRows(rows,date,env);
+ // Erst festschreiben, wenn der Editor/Control-Centre mindestens einen Slot synchronisiert hat.
+ if(generated.slotCount>0){
+   await saveFixedDepotAssignments(env,date,version,generated);
+   stored=await loadFixedDepotAssignments(env,date,version);
+   if(stored.length)return fixedDepotResult(rows,stored,slots);
+ }
+ generated.fixed=false;generated.missingVehicleAssignments=[];
+ return generated;
+}
+
 async function vehicleDayRows(plan,date,q,env){
  let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=String(q||"").trim().toLowerCase();
  let fleet=(await loadFleetFromDb(env)).filter(v=>v.regular||String(v.status||"").trim().toLowerCase()==="im betrieb");
@@ -474,10 +532,10 @@ async function vehicleDayRows(plan,date,q,env){
  let filtered=rows.filter(row=>{if(!qq)return true;let hay=[row.vehicle,row.model,row.used?"im einsatz":"nicht eingesetzt",row.runs.join(" "),row.startTime,row.endTime,row.startLoc,row.endLoc,row.lines.join(" "),...row.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
  filtered.sort((a,b)=>{let an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
  let usedVehicles=rows.filter(r=>r.used).length,activeVehicles=rows.length;
- let slotResult=await applyDepotSlotsToRows(rows,date,env);
+ let slotResult=await fixedDepotSlotsForRows(plan,rows,date,env);
  const visibleSet=new Set(filtered.map(r=>r.vehicle));
  filtered=slotResult.rows.filter(r=>visibleSet.has(r.vehicle));
- return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:slotResult.occupancy,slotCount:slotResult.slotCount,slotReservations:slotResult.reservations,slotConflicts:slotResult.slotConflicts}
+ return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:slotResult.occupancy,slotCount:slotResult.slotCount,slotReservations:slotResult.reservations,slotConflicts:slotResult.slotConflicts,depotAssignmentsFixed:!!slotResult.fixed,missingVehicleAssignments:slotResult.missingVehicleAssignments||[],planVersion:Number(plan?.version||0)}
 }
 const ANNUAL_VACATION_DAYS=30;
 async function vacationDaysUsed(env,employeeId,year){let y=Number(year),start=`${y}-01-01`,end=`${y}-12-31`,r=await env.DB.prepare(`SELECT COUNT(DISTINCT duty_date) c FROM duty_overrides WHERE employee_id=? AND kind='Urlaub' AND duty_date>=? AND duty_date<=?`).bind(employeeId,start,end).first();return Number(r?.c||0)}
