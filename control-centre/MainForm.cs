@@ -102,7 +102,7 @@ public sealed class MainForm : Form
     void SaveConfig()
     {
         _cfg.DienstplanBaseUrl=_url.Text.Trim();
-        _cfg.EnsureDepotSyncToken();
+        _cfg.EnsureDepotCredentials();
         _token.Text=_cfg.DepotSyncToken;
         _cfg.OmsiRoot=_omsi.Text.Trim();
         _cfg.MapFolder=_map.Text.Trim();
