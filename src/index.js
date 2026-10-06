@@ -592,8 +592,33 @@ async function openOmsiDepotDayPayload(plan,date,env){
  const j=await vehicleDayRows(plan,date,"",env);
  return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:!!j.depotAssignmentsFixed,missingVehicleAssignments:j.missingVehicleAssignments||[],slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},slotReservations:j.slotReservations||{},slotConflicts:j.slotConflicts||[],vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
 }
-async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.23",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+async function ensureAuthSchema(env){
+ await env.DB.batch([
+  env.DB.prepare(`CREATE TABLE IF NOT EXISTS users(username TEXT PRIMARY KEY,employee_id TEXT NOT NULL,role TEXT NOT NULL,password_hash TEXT NOT NULL,salt TEXT NOT NULL,must_change INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)`),
+  env.DB.prepare(`CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,username TEXT NOT NULL,expires_at TEXT NOT NULL,created_at TEXT NOT NULL)`)
+ ]);
+}
+async function loginRoute(req,env){
+ await ensureAuthSchema(env);
+ try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten vor Login nicht geladen werden:",e?.message||e)}
+ let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);
+ if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);
+ if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);
+ let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);
+ await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();
+ let emp=EMP_BY_ID.get(u.employee_id);
+ if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);
+ let ls=employeeLifecycleStatus(emp,new Date());
+ if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);
+ if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);
+ return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`});
+}
+
+async function route(req,env){let url=new URL(req.url),p=url.pathname;
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.24",time:new Date().toISOString(),schemaInit:"deferred"});
+ if(p==="/api/login"&&req.method==="POST")return loginRoute(req,env);
+ await ensureSchemaOnce(env);
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.24",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
