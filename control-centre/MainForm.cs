@@ -7,7 +7,7 @@ namespace ROGIS.ControlCentre;
 public sealed class MainForm : Form
 {
     readonly TextBox _url=new(){Dock=DockStyle.Fill};
-    readonly TextBox _token=new(){Dock=DockStyle.Fill,UseSystemPasswordChar=true};
+    readonly TextBox _token=new(){Dock=DockStyle.Fill,UseSystemPasswordChar=true,ReadOnly=true,TabStop=false};
     readonly TextBox _omsi=new(){Dock=DockStyle.Fill};
     readonly TextBox _map=new(){Dock=DockStyle.Fill};
     readonly TextBox _openOmsi=new(){Dock=DockStyle.Fill};
@@ -47,7 +47,7 @@ public sealed class MainForm : Form
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         cfgGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Sync-Token (automatisch)",_token);
+        AddField(cfgGrid,0,"Dienstplan-URL",_url,"Depot-Verbindungsschlüssel (automatisch)",_token);
         AddField(cfgGrid,1,"OMSI-Root",_omsi,"Map-Ordner",_map);
         AddField(cfgGrid,2,"openOMSI.exe",_openOmsi,"Betriebstag",_date);
 
@@ -102,7 +102,6 @@ public sealed class MainForm : Form
     void SaveConfig()
     {
         _cfg.DienstplanBaseUrl=_url.Text.Trim();
-        _cfg.DepotSyncToken=_token.Text.Trim();
         _cfg.EnsureDepotSyncToken();
         _token.Text=_cfg.DepotSyncToken;
         _cfg.OmsiRoot=_omsi.Text.Trim();
