@@ -1,0 +1,8 @@
+ROGIS v6.4.39 – Wochengenerierung in 7 Worker-Schritte aufgeteilt
+
+- Ganze Wochen werden nicht mehr in einem einzigen Cloudflare-Worker-Request berechnet.
+- Neuer Ablauf: Start -> 7 einzelne Tages-Requests -> Finish/Aktivierung.
+- Jeder Tag erhält sein eigenes Worker-CPU-Budget; Cloudflare Error 1102 durch die komplette Wochenberechnung wird damit vermieden.
+- Gilt für: Diese Woche erzeugen, nächste Woche, komplette Woche durchwürfeln, Planentwurf und komplette Woche verwerfen.
+- Der alte Ein-Request-Endpunkt liefert nur noch den Hinweis, die Seite neu zu laden, statt erneut eine 1102-Berechnung zu starten.
+- Ein bestehender aktiver Plan wird erst beim erfolgreichen Finish ersetzt; ein abgebrochener Lauf zerstört ihn nicht.
