@@ -6,18 +6,20 @@ ROGIS Stellplatz Solo Elektro (ES) - Elektro Solo
 ROGIS
 Betriebshof Stellplaetze
 
-[texttexture]
+[texttexture_enh]
 0
 DIN-Ziffern eng 1
-256
-96
+512
+128
 0
 255
 255
 255
+0
+1
 
 [mesh]
-model\ROGIS_DepotSlot_ES.x
+model\ROGIS_DepotSlot_ES.o3d
 
 [matl]
 slot_text.bmp
