@@ -294,11 +294,59 @@ async function persistDepotPlanState(env,plan,now=new Date().toISOString()){
    }
  }
 }
+async function buildPartialDepotPreviewV6431(plan,env,slots=null,fleet=null){
+ slots=slots||await loadDepotSlots(env);fleet=fleet||await activeDepotFleet(env);
+ const dates=Object.keys(plan?.days||{}).sort(),byId=new Map(slots.map(x=>[x.id,x]));
+ plan.depotPreview=true;
+ for(const date of dates){
+   const day=plan.days[date],uses=usageForDay(day),chosen=new Set(),byVehicle={};
+
+   // Feste eCitaro-G-Hallenplätze zuerst: vorhandene M001-M010 werden immer ihren Stammwagen zugeordnet.
+   for(const v of fleet){
+     if(!isECitaroGHallVehicle(v))continue;
+     const slot=byId.get(fixedHallSlotFor(v));if(!slot)continue;
+     const vn=String(v.number),u=uses.get(vn);
+     chosen.add(vn);
+     byVehicle[vn]={vehicleNumber:vn,used:!!u,startDepot:slot.depot,startSlot:slot.id,endDepot:slot.depot,endSlot:slot.id,returnSlot:slot.id,
+       pulloutMin:u?Math.max(1,Number.isFinite(u.start)?u.start:1):null,pullinMin:u?Math.max(1,Number.isFinite(u.end)?u.end:1):null,slotType:slot.type,
+       startPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading},returnPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading}};
+   }
+
+   // Übrige bereits gebaute Testslots bekommen bevorzugt einen an diesem Tag eingesetzten, passenden Wagen.
+   for(const slot of slots){
+     if(ECITARO_G_HALL_SLOTS.has(slot.id))continue;
+     let candidates=fleet.filter(v=>!chosen.has(String(v.number))&&slotFitsVehicle(slot,v));
+     candidates.sort((a,b)=>{
+       const au=uses.get(String(a.number)),bu=uses.get(String(b.number));
+       const as=au?0:1,bs=bu?0:1;if(as!==bs)return as-bs;
+       const ad=au&&slotDepotName(au.startDepot)===slot.depot?0:1,bd=bu&&slotDepotName(bu.startDepot)===slot.depot?0:1;if(ad!==bd)return ad-bd;
+       return Number(a.number)-Number(b.number);
+     });
+     const v=candidates[0];if(!v)continue;
+     const vn=String(v.number),u=uses.get(vn);chosen.add(vn);
+     byVehicle[vn]={vehicleNumber:vn,used:!!u,startDepot:slot.depot,startSlot:slot.id,endDepot:slot.depot,endSlot:slot.id,returnSlot:slot.id,
+       pulloutMin:u?Math.max(1,Number.isFinite(u.start)?u.start:1):null,pullinMin:u?Math.max(1,Number.isFinite(u.end)?u.end:1):null,slotType:slot.type,
+       startPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading},returnPosition:{x:slot.x,y:slot.y,z:slot.z,heading:slot.heading}};
+   }
+
+   for(const info of Object.values(day.runInfo||{})){
+     const vn=String(info?.vehicle?.number||""),a=byVehicle[vn];if(a){info.startSlot=a.startSlot;info.returnSlot=a.endSlot}
+   }
+   for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
+     const vn=String(seg.vehicle||"").match(/\d+/)?.[0],a=vn?byVehicle[vn]:null;if(a){seg.startSlot=a.startSlot;seg.returnSlot=a.endSlot}
+   }
+   day.depotSlots=byVehicle;day.depotPreview=true;
+   day.vehicleSlotState=Object.fromEntries(Object.values(byVehicle).map(a=>[a.vehicleNumber,{vehicleNumber:a.vehicleNumber,slotId:a.endSlot,depot:a.endDepot}]));
+ }
+ return plan;
+}
 async function ensureDepotPlanState(env,plan){
  const fleet=await activeDepotFleet(env),dates=Object.keys(plan?.days||{}).sort();
  if(!dates.length)return plan;
  const complete=dates.every(d=>Object.keys(plan.days[d]?.depotSlots||{}).length>=fleet.length);
  if(complete)return plan;
+ const slots=await loadDepotSlots(env);
+ if(slots.length<fleet.length)return buildPartialDepotPreviewV6431(plan,env,slots,fleet);
  await assignDepotSlotsToPlan(plan,env);
  const body=JSON.stringify(plan),now=new Date().toISOString();
  await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
@@ -597,7 +645,7 @@ async function vehicleDayRows(plan,date,q,env){
  let usedVehicles=rows.filter(r=>r.used).length,activeVehicles=rows.length,rr=depotReservationsForDay(plan?.days?.[date]);
  const slots=await loadDepotSlots(env),occupancy={};
  for(const depot of ["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"])occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slots.filter(x=>x.depot===depot).length};
- return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:assignments.size>=activeVehicles,missingVehicleAssignments:rows.filter(r=>!r.startSlot||!r.endSlot).map(r=>Number((String(r.vehicle).match(/\d+/)||[0])[0])).filter(Boolean),planVersion:Number(plan?.version||0)}
+ return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:assignments.size>=activeVehicles,previewMode:!!plan?.depotPreview||!!plan?.days?.[date]?.depotPreview,missingVehicleAssignments:rows.filter(r=>!r.startSlot||!r.endSlot).map(r=>Number((String(r.vehicle).match(/\d+/)||[0])[0])).filter(Boolean),planVersion:Number(plan?.version||0)}
 }
 const ANNUAL_VACATION_DAYS=30;
 async function vacationDaysUsed(env,employeeId,year){let y=Number(year),start=`${y}-01-01`,end=`${y}-12-31`,r=await env.DB.prepare(`SELECT COUNT(DISTINCT duty_date) c FROM duty_overrides WHERE employee_id=? AND kind='Urlaub' AND duty_date>=? AND duty_date<=?`).bind(employeeId,start,end).first();return Number(r?.c||0)}
@@ -659,7 +707,7 @@ function openOmsiDayPayload(plan,date){
 async function openOmsiDepotDayPayloadV6425(plan,date,env){
  plan=await ensureDepotPlanState(env,plan);
  const j=await vehicleDayRows(plan,date,"",env);
- return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:!!j.depotAssignmentsFixed,missingVehicleAssignments:j.missingVehicleAssignments||[],slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},slotReservations:j.slotReservations||{},slotConflicts:j.slotConflicts||[],vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||r.returnSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
+ return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:!!j.depotAssignmentsFixed,previewMode:!!j.previewMode,missingVehicleAssignments:j.missingVehicleAssignments||[],slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},slotReservations:j.slotReservations||{},slotConflicts:j.slotConflicts||[],vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||r.returnSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
