@@ -1,0 +1,10 @@
+ROGIS Dienstplan v6.4.23
+========================
+
+- Login-Schaltfläche zeigt jetzt sofort einen Status, besitzt einen Timeout und meldet API-/HTTP-Fehler sichtbar statt scheinbar nichts zu tun.
+- Stellplätze werden bereits bei der Planerzeugung fest vergeben.
+- Vor Vergabe wird pro Tag/Planversion geprüft, ob der Slot frei und lang genug ist.
+- ES/EG/DS/DG werden passend zu Elektro/Diesel und Solo/Gelenk bevorzugt.
+- Zuordnung wird je Datum + Planversion + Wagennummer in D1 dauerhaft gespeichert.
+- Start- und Rückgabestellplatz werden in den Dienstsegmenten angezeigt.
+- openOMSI erhält nur die fertige Planbelegung; keine nachträgliche Umsortierung der Slots.
