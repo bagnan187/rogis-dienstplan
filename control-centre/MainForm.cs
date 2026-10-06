@@ -152,8 +152,10 @@ public sealed class MainForm : Form
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
 
-        if(!depot.depotAssignmentsFixed)
+        if(!depot.depotAssignmentsFixed&&!depot.previewMode)
             throw new InvalidOperationException("Die Website hat noch keine feste Stellplatzplanung gespeichert.");
+        if(depot.previewMode)
+            Log("TESTMODUS: Es sind noch nicht genug Stellplätze für die gesamte Flotte vorhanden. Nur bereits angelegte Slots werden testweise mit Bussen belegt; dieser Vorschauzustand wird nicht als endgültiger Fahrzeugstand gespeichert.");
         if(depot.slotConflicts is {Length:>0})
             throw new InvalidOperationException("Stellplatzkonflikt: "+string.Join(", ",depot.slotConflicts.Select(x=>x.slotId).Distinct()));
         if(depot.missingVehicleAssignments is {Length:>0})
@@ -186,7 +188,7 @@ public sealed class MainForm : Form
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)
     {
-        _status.Text=$"Dienstplan {depot.date} · Planversion {depot.planVersion} · {(depot.depotAssignmentsFixed?"Stellplätze FEST GESPEICHERT":"Stellplätze noch nicht fest gespeichert")}";
+        _status.Text=$"Dienstplan {depot.date} · Planversion {depot.planVersion} · {(depot.previewMode?"TESTMODUS · Teilbelegung":depot.depotAssignmentsFixed?"Stellplätze FEST GESPEICHERT":"Stellplätze noch nicht fest gespeichert")}";
         _slotStatus.Text=$"Slots: {depot.slotCount}"+(slots is null?"":$" · lokal erkannt: {slots.Count}");
         _aiStatus.Text=$"KI-Umläufe: {ai.assignmentCount} · TTData: {ai.timetableLine}";
         _depotStatus.Text=(depot.slotConflicts?.Length??0)==0
