@@ -11,6 +11,7 @@ public sealed class AppConfig
     public string OpenOmsiExe { get; set; } = "";
     public string StaticObjectFolder { get; set; } = @"Sceneryobjects\ROGISstatic";
     public string StaticObjectPattern { get; set; } = "ROGIS_{0}.sco";
+    public int DepotPluginPort { get; set; } = 47830;
 
     public static string ConfigPath => Path.Combine(AppContext.BaseDirectory, "control-centre.json");
 
