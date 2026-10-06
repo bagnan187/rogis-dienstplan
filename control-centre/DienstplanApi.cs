@@ -8,27 +8,44 @@ public sealed class DienstplanApi : IDisposable
 {
     readonly HttpClient _http;
     readonly JsonSerializerOptions _json = new() { PropertyNameCaseInsensitive = true };
+    readonly AppConfig _cfg;
 
     public DienstplanApi(AppConfig cfg)
     {
+        _cfg = cfg;
+        _cfg.EnsureDepotCredentials();
         _http = new HttpClient { BaseAddress = new Uri(cfg.DienstplanBaseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
-        if (!string.IsNullOrWhiteSpace(cfg.DepotSyncToken))
-            _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", cfg.DepotSyncToken);
     }
 
     public async Task<SlotSyncResult> SyncSlotsAsync(IReadOnlyList<DepotSlot> slots)
     {
-        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre", slots });
-        using var content = new StringContent(body, Encoding.UTF8, "application/json");
-        using var res = await _http.PostAsync("api/openomsi/depot-slots", content);
-        var text = await res.Content.ReadAsStringAsync();
-        if (!res.IsSuccessStatusCode)
+        var first = await SyncSlotsAttemptAsync(slots);
+        if (first.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
-            if ((int)res.StatusCode == 401)
-                throw new InvalidOperationException("Depot-Verbindung nicht autorisiert. Öffne auf der Dienstplan-Website Administration → Betriebshof → „Depot-Verbindung neu koppeln“ und starte danach den Sync erneut. Server: " + text);
-            throw new InvalidOperationException($"Slot-Sync HTTP {(int)res.StatusCode}: {text}");
+            // Selbstheilung: neue lokale Depot-Identität erzeugen und einmal automatisch neu koppeln.
+            _cfg.ResetDepotCredentials();
+            first.Dispose();
+            first = await SyncSlotsAttemptAsync(slots);
         }
-        return JsonSerializer.Deserialize<SlotSyncResult>(text, _json) ?? throw new InvalidOperationException("Ungültige Slot-Sync-Antwort.");
+
+        using (first)
+        {
+            var text = await first.Content.ReadAsStringAsync();
+            if (!first.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Slot-Sync HTTP {(int)first.StatusCode}: {text}");
+            return JsonSerializer.Deserialize<SlotSyncResult>(text, _json) ?? throw new InvalidOperationException("Ungültige Slot-Sync-Antwort.");
+        }
+    }
+
+    async Task<HttpResponseMessage> SyncSlotsAttemptAsync(IReadOnlyList<DepotSlot> slots)
+    {
+        _cfg.EnsureDepotCredentials();
+        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre", slots });
+        var req = new HttpRequestMessage(HttpMethod.Post, "api/openomsi/depot-slots");
+        req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _cfg.DepotSyncToken);
+        req.Headers.TryAddWithoutValidation("X-ROGIS-Depot-Client", _cfg.DepotClientId);
+        req.Content = new StringContent(body, Encoding.UTF8, "application/json");
+        return await _http.SendAsync(req);
     }
 
     async Task<T> GetJsonAsync<T>(string relativeUrl,string label)
