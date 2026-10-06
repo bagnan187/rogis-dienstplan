@@ -29,7 +29,7 @@ public sealed class MainForm : Form
         _cfg=AppConfig.Load();
         BuildUi();
         LoadConfigToUi();
-        Shown+=async(_,__)=>{StartPluginListener();await Safe(RefreshOnlyAsync);};
+        Shown+=async(_,__)=>{StartPluginListener();await StartupRefreshAsync();};
         FormClosed+=(_,__)=>{try{_udpCts?.Cancel();_udp?.Dispose();}catch{}};
     }
 
@@ -113,6 +113,19 @@ public sealed class MainForm : Form
     }
 
     string MapDir()=>Path.Combine(_cfg.OmsiRoot,"maps",_cfg.MapFolder);
+
+    async Task StartupRefreshAsync()
+    {
+        try
+        {
+            await RefreshOnlyAsync();
+        }
+        catch(Exception ex)
+        {
+            _status.Text="Bereit · Hofbelegung bei Bedarf mit „KI + Hofbelegung schreiben“ synchronisieren.";
+            Log("Startstatus noch nicht vollständig verfügbar: "+ex.Message);
+        }
+    }
 
     async Task RefreshOnlyAsync()
     {

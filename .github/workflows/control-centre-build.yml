@@ -5,6 +5,7 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - fix/depot-api-v6426b
       - fix/depot-system-v6425
     paths:
       - "control-centre/**"
