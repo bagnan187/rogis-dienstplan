@@ -486,7 +486,7 @@ function openOmsiDayPayload(plan,date){
 
 async function openOmsiDepotDayPayload(plan,date,env){
  const j=await vehicleDayRows(plan,date,"",env);
- return{ok:true,date,planVersion:Number(plan?.version||0),slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},vehicles:j.rows.map(r=>({vehicle:r.vehicle,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
+ return{ok:true,date,planVersion:Number(plan?.version||0),slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
 }
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
  if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.22",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
