@@ -1,0 +1,27 @@
+name: Build ROGIS Control Centre
+
+on:
+  push:
+    branches:
+      - feature/control-centre-rebuild
+      - main
+    paths:
+      - "control-centre/**"
+      - ".github/workflows/control-centre-build.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish Windows x64
+        run: dotnet publish control-centre/ROGIS.ControlCentre.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o control-centre-publish
+      - name: Upload Control Centre
+        uses: actions/upload-artifact@v4
+        with:
+          name: ROGIS-Control-Centre-win64
+          path: control-centre-publish/**

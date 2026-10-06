@@ -275,3 +275,15 @@ Neu ist die read-only API `GET /api/openomsi/day?date=YYYY-MM-DD`. Sie liefert a
 - Pro Fahrerdienst fährt weiterhin höchstens ein Azubi mit. U18-Azubis bleiben vollständig auf 06:00–22:00 begrenzt.
 - TL-/GR-Fremdleistungen werden für Azubi-Begleitfahrten nicht verwendet.
 - Bereits gespeicherte Planwochen werden nicht rückwirkend verändert; den betroffenen Tag bzw. die Woche neu generieren.
+
+
+## v6.4.23 – feste Betriebshof-Stellplätze & ROGIS Control Centre
+
+- Betriebshof-Stellplätze werden je Datum und aktiver Planversion einmal geplant und dauerhaft in D1 gespeichert.
+- Frei werdende Stellplätze führen nicht zu einer automatischen Umsortierung anderer Fahrzeuge.
+- Start- und Rückgabeplatz bleiben Bestandteil des Tages-Wageneinsatzes; eine Änderung erfolgt nur mit neuer Planversion oder über den ausdrücklichen Admin-Replan-Endpunkt.
+- Zeitfenster verhindern Doppelbelegungen: Startplatz bis Ausrücken, Rückgabeplatz ab Einrücken, nicht eingesetzte Wagen ganztägig.
+- Die openOMSI-Depot-API liefert ausschließlich diese fest gespeicherte Belegung.
+- Neues Windows-Programm unter `control-centre/`: synchronisiert die im OMSI-Editor beschrifteten Slotobjekte, schreibt die KI-`car_use`-Datei und erzeugt die Static-Hofbelegung aus `ROGIS_<Wagennummer>.sco`.
+- Die vier Slotobjekte DS/DG/ES/EG sowie `ROGIS_DepotSync.lua` werden mit dem Control Centre ausgeliefert.
+- Der ROGIS Live Client für Fahrinfo-Echtzeit bleibt davon getrennt.
