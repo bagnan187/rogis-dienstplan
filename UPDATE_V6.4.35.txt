@@ -1,0 +1,5 @@
+ROGIS v6.4.35 – Depot-Authentifizierung 401 Hotfix
+
+- Kritischen Fehler im Worker behoben: Authorization-Bearer-Header wurde mit einem falsch escapeten Regex gelesen.
+- Bearer-Token wird jetzt robust über startsWith("bearer ") + slice(7) ausgewertet.
+- Bestehendes Control Centre v6.4.34 kann weiter verwendet werden; kein Client-Update erforderlich.

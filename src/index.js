@@ -380,7 +380,8 @@ function depotReservationsForDay(day){
 }
 async function depotTokenHash(token){const b=new TextEncoder().encode(String(token));const d=await crypto.subtle.digest("SHA-256",b);return [...new Uint8Array(d)].map(x=>x.toString(16).padStart(2,"0")).join("")}
 async function depotSyncAuthorizeOrPair(req,env){
- const auth=String(req.headers.get("authorization")||""),m=auth.match(/^Bearer\\s+(.+)$/i),token=String(m?.[1]||"").trim();
+ const auth=String(req.headers.get("authorization")||"").trim();
+ const token=auth.toLowerCase().startsWith("bearer ")?auth.slice(7).trim():"";
  if(token.length<32)return false;
  const hash=await depotTokenHash(token),u=new URL(req.url),clientId=String(req.headers.get("x-rogis-depot-client")||u.searchParams.get("clientId")||u.searchParams.get("client")||"").trim();
  if(clientId){
@@ -740,12 +741,12 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.34",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.35",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
-     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre v6.4.34 koppelt automatisch neu (Header- und Query-Fallback)."},401);
+     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre v6.4.34+ koppelt automatisch neu; Backend v6.4.35 liest Bearer-Token korrekt."},401);
      let b=await req.json();try{
        const sync=await syncDepotSlotsV6425(env,b.slots,b.source||"ROGIS Control Centre");
        const requestedDate=/^\d{4}-\d{2}-\d{2}$/.test(String(b?.date||""))?String(b.date):berlinDateKey();
