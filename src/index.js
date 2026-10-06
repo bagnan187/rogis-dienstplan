@@ -368,6 +368,8 @@ function reserveSlotInterval(reservations,slotId,from,to,vehicle,kind){
  reservations.get(slotId).push({from,to,vehicle,kind});
 }
 function chooseDepotSlotInterval(slots,depot,need,reservations,from,to,seed){
+ // Hechem hat ausschließlich Solo-Umläufe/-Abstellung. Gelenkbusse dürfen dort nie eingeplant werden.
+ if(depot==="Betriebshof Hechem"&&(need==="DG"||need==="EG"))return null;
  const cand=slots.filter(s=>s.depot===depot&&slotIntervalFree(reservations,s.slot_id,from,to))
   .map(s=>({s,fit:slotCompatible(s.slot_type,need),rnd:hash(seed+"|"+s.slot_id)}))
   .filter(x=>x.fit<99)
@@ -415,7 +417,7 @@ async function applyDepotSlotsToRows(rows,date,env){
      if(chosen)break;
    }
    if(chosen){reserveSlotInterval(reservations,chosen.slot_id,0,HORIZON,row.vehicle,'idle');depotIdleLoad[depotCodeFromName(depotName)]++;}
-   row.startDepot=depotName||'Betriebshof Mitte';row.startSlot=chosen?.slot_id||null;
+   row.startDepot=chosen?depotName:null;row.startSlot=chosen?.slot_id||null;
    row.endDepot=row.startDepot;row.endSlot=row.startSlot;row.slotType=need;
  }
 
