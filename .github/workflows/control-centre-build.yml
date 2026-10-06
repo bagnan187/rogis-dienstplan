@@ -5,6 +5,7 @@ on:
     branches:
       - feature/control-centre-rebuild
       - main
+      - fix/depot-length-only-v6428
       - fix/depot-d1-schema-v6427
       - fix/depot-api-v6426b
       - fix/depot-system-v6425
