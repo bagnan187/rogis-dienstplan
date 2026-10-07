@@ -1,3 +1,8 @@
 name = "rogis"
 compatibility_date = "2026-10-07"
 pages_build_output_dir = "public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rogis-portal"
+database_id = "39ec71e2-3dae-4da6-9282-c2d66930c630"
