@@ -1,0 +1,8 @@
+ROGIS v6.4.48 – Live-/Manuell-Refresh entlastet
+
+- /api/week-state läuft jetzt als extrem leichter Status-Endpunkt vor der Mitarbeiter-Hydrierung.
+- Der 7-Sekunden-Livecheck lädt keine Mitarbeiter-/Planungsdaten mehr, solange sich die Planversion nicht geändert hat.
+- Der manuelle Aktualisieren-Button prüft zuerst nur den Änderungsstatus. Ohne Änderung werden keine schweren Tages-/Wageneinsatz-/Admin-Ansichten neu berechnet.
+- Bei tatsächlicher Änderung wird die eigene Woche einmal geladen; sichtbare Admin-Teilansichten werden danach getrennt geladen.
+- Fehler in einer schweren Teilansicht machen nicht mehr den gesamten Dienstplan-Refresh kaputt.
+- Personalevents sind beim GET jetzt ebenfalls read-only; Personalautomatik läuft nicht mehr beim bloßen Anzeigen.
