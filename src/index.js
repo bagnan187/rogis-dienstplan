@@ -1044,7 +1044,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.59",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.60",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
