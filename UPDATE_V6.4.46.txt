@@ -1,0 +1,9 @@
+ROGIS v6.4.46 – Teilbelegung im Wageneinsatz sichtbar
+
+- Eine nur teilweise mögliche Hofbelegung wird jetzt dauerhaft in der aktiven Planversion gespeichert.
+- Bereits zugeordnete Fahrzeuge zeigen im Wageneinsatz sofort Start- und Rückgabestellplatz.
+- Nur wirklich nicht zugeordnete aktive Wagen bleiben mit „Stellplatz noch nicht geplant“ markiert.
+- Control Centre erhält dieselbe gespeicherte Teilbelegung und erkennt previewMode korrekt.
+- depotAssignmentsFixed wird ausschließlich anhand der aktuell einsatzfähigen Fahrzeuge und vollständiger Start-/Rückgabestellplätze bewertet.
+- Zusätzliche alte/historische Fahrzeugzeilen verfälschen den FEST-Status nicht mehr.
+- Der Website-Button nennt jetzt, wie viele Fahrzeuge tatsächlich zugeordnet wurden.

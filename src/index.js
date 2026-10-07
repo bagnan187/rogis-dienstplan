@@ -468,7 +468,15 @@ async function ensureDepotPlanState(env,plan){
    return assigned.length>=fleet.length&&assigned.every(a=>activeSlotIds.has(String(a?.startSlot||"").toUpperCase())&&activeSlotIds.has(String(a?.endSlot||a?.returnSlot||"").toUpperCase()));
  });
  if(complete)return plan;
- if(slots.length<fleet.length)return buildPartialDepotPreviewV6431(plan,env,slots,fleet);
+ if(slots.length<fleet.length){
+   plan=await buildPartialDepotPreviewV6431(plan,env,slots,fleet);
+   const body=JSON.stringify(plan),now=new Date().toISOString();
+   // Teilbelegung bewusst speichern: bereits zugeordnete Wagen sollen im Wageneinsatz
+   // und Control Centre sichtbar bleiben. Nicht zugeordnete Fahrzeuge bleiben explizit offen.
+   await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+   await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+   return plan;
+ }
  await assignDepotSlotsToPlan(plan,env);
  const body=JSON.stringify(plan),now=new Date().toISOString();
  await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
@@ -823,6 +831,7 @@ async function vehicleDayRows(plan,date,q,env){
  let filtered=rows.filter(row=>{if(!qq)return true;let hay=[row.vehicle,row.model,row.used?"im einsatz":"nicht eingesetzt",row.runs.join(" "),row.startTime,row.endTime,row.startLoc,row.endLoc,row.lines.join(" "),...row.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
  filtered.sort((a,b)=>{let an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
  const assignments=new Map(Object.values(plan?.days?.[date]?.depotSlots||{}).map(a=>[String(a.vehicleNumber),a]));
+ const activeVehicleNumbers=new Set(fleet.map(v=>String(v.number)));
  for(const row of rows){
    const vn=String((String(row.vehicle).match(/\d+/)||[""])[0]),a=assignments.get(vn);
    if(a){
@@ -847,7 +856,13 @@ async function vehicleDayRows(plan,date,q,env){
  let usedVehicles=rows.filter(r=>r.used).length,activeVehicles=rows.length,rr=depotReservationsForDay(plan?.days?.[date]);
  const slots=await loadDepotSlots(env),occupancy={};
  for(const depot of ["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"])occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slots.filter(x=>x.depot===depot).length};
- return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:assignments.size>=activeVehicles,previewMode:!!plan?.depotPreview||!!plan?.days?.[date]?.depotPreview,missingVehicleAssignments:rows.filter(r=>!r.startSlot||!r.endSlot).map(r=>Number((String(r.vehicle).match(/\d+/)||[0])[0])).filter(Boolean),planVersion:Number(plan?.version||0)}
+ const missingActiveVehicleAssignments=[...activeVehicleNumbers].filter(vn=>{
+   const a=assignments.get(vn);
+   return !a||!String(a.startSlot||"").trim()||!String(a.endSlot||a.returnSlot||"").trim();
+ }).map(Number).filter(Boolean);
+ const previewMode=!!plan?.depotPreview||!!plan?.days?.[date]?.depotPreview;
+ const depotAssignmentsFixed=activeVehicleNumbers.size>0&&missingActiveVehicleAssignments.length===0&&!previewMode;
+ return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed,previewMode,missingVehicleAssignments:missingActiveVehicleAssignments,planVersion:Number(plan?.version||0)}
 }
 const ANNUAL_VACATION_DAYS=30;
 async function vacationDaysUsed(env,employeeId,year){let y=Number(year),start=`${y}-01-01`,end=`${y}-12-31`,r=await env.DB.prepare(`SELECT COUNT(DISTINCT duty_date) c FROM duty_overrides WHERE employee_id=? AND kind='Urlaub' AND duty_date>=? AND duty_date<=?`).bind(employeeId,start,end).first();return Number(r?.c||0)}
@@ -913,7 +928,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.45",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.46",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
@@ -972,7 +987,8 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
        if(assigned<fleet.length)missingByDay[d]=Math.max(0,fleet.length-assigned);
      }
      if(preview||Object.keys(missingByDay).length){
-       return json({ok:true,previewMode:true,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,missingByDay,message:`Hofbelegung nur teilweise möglich: ${slots.length} aktive Stellplätze für ${fleet.length} einsatzfähige Fahrzeuge. Bitte weitere passende Slot-Cubes synchronisieren.`});
+       const assignedCounts=dates.map(d=>Object.keys(plan.days[d]?.depotSlots||{}).length),minAssigned=assignedCounts.length?Math.min(...assignedCounts):0;
+       return json({ok:true,previewMode:true,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:minAssigned,missingByDay,message:`Teilbelegung gespeichert: mindestens ${minAssigned} von ${fleet.length} einsatzfähigen Fahrzeugen haben jetzt einen Stellplatz. ${slots.length} aktive Slots sind synchronisiert; nicht zugeordnete Wagen bleiben im Wageneinsatz als „Stellplatz noch nicht geplant“ markiert.`});
      }
      return json({ok:true,previewMode:false,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,alreadyComplete:wasComplete,message:wasComplete?`Hofbelegung für Planversion ${plan.version} war bereits vollständig und bleibt unverändert.`:`Hofbelegung für Planversion ${plan.version} wurde fest geplant und gespeichert.`});
    }catch(e){
