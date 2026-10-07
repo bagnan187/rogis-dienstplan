@@ -913,7 +913,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.44",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.45",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
@@ -954,6 +954,31 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
  if(p==="/api/objections"&&req.method==="POST"){let b=await req.json(),rd=String(b.requestedDate||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(rd))return json({error:"Bitte Datum auswählen."},400);let type=String(b.type||"Sonstiges"),requestedTime=String(b.requestedTime||"");if(type==="Urlaubswunsch"){let end=/^\d{4}-\d{2}-\d{2}$/.test(requestedTime)?requestedTime:rd,cap=await vacationCapacityForRange(env,emp.id,rd,end);if(!cap.ok)return json({error:cap.error},400);let used=await vacationDaysUsed(env,emp.id,Number(rd.slice(0,4)));if(used>=ANNUAL_VACATION_DAYS)return json({error:`Für ${rd.slice(0,4)} sind bereits alle ${ANNUAL_VACATION_DAYS} Urlaubstage verbraucht.`},400);if(!/^\d{4}-\d{2}-\d{2}$/.test(requestedTime))requestedTime=rd}let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`).bind(emp.id,emp.name,rd,type,requestedTime,String(b.message||""),now,now).run();return json({ok:true})}
  if(su.role!=="admin")return json({error:"Administratorrechte erforderlich."},403);
  if(p==="/api/admin/depot-sync/reset"&&req.method==="POST"){const now=new Date().toISOString();await env.DB.batch([env.DB.prepare(`DELETE FROM depot_sync_pairing`),env.DB.prepare(`DELETE FROM depot_sync_clients`)]);await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES('depot_pairing_manual_reset',?,?)`).bind(su.username,now).run();return json({ok:true,message:"Depot-Verbindung zurückgesetzt. Beim nächsten Sync koppelt sich das Control Centre automatisch neu."})}
+ if(p==="/api/admin/depot-plan"&&req.method==="POST"){
+   let b=await req.json(),mk=String(b.monday||"");
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(mk))return json({error:"Ungültige Planwoche."},400);
+   let row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+   if(!row)return json({error:"Für diese Woche existiert kein aktiver Dienstplan. Bitte zuerst den Dienstplan erzeugen."},400);
+   try{
+     let plan=JSON.parse(row.plan_json),fleet=await activeDepotFleet(env),slots=await loadDepotSlots(env);
+     if(!slots.length)return json({error:"Es sind noch keine Depot-Slots gespeichert. Bitte im Control Centre einmal „KI + Hofbelegung schreiben“ ausführen, damit die Slot-Cubes synchronisiert werden."},400);
+     const beforeDates=Object.keys(plan.days||{}).sort();
+     const wasComplete=beforeDates.length>0&&beforeDates.every(d=>Object.keys(plan.days[d]?.depotSlots||{}).length>=fleet.length);
+     plan=await ensureDepotPlanState(env,plan);
+     const dates=Object.keys(plan.days||{}).sort(),preview=!!plan.depotPreview||dates.some(d=>!!plan.days[d]?.depotPreview);
+     let missingByDay={};
+     for(const d of dates){
+       const assigned=Object.keys(plan.days[d]?.depotSlots||{}).length;
+       if(assigned<fleet.length)missingByDay[d]=Math.max(0,fleet.length-assigned);
+     }
+     if(preview||Object.keys(missingByDay).length){
+       return json({ok:true,previewMode:true,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,missingByDay,message:`Hofbelegung nur teilweise möglich: ${slots.length} aktive Stellplätze für ${fleet.length} einsatzfähige Fahrzeuge. Bitte weitere passende Slot-Cubes synchronisieren.`});
+     }
+     return json({ok:true,previewMode:false,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,alreadyComplete:wasComplete,message:wasComplete?`Hofbelegung für Planversion ${plan.version} war bereits vollständig und bleibt unverändert.`:`Hofbelegung für Planversion ${plan.version} wurde fest geplant und gespeichert.`});
+   }catch(e){
+     return json({error:"Hofbelegung konnte nicht geplant werden: "+(e?.message||String(e))},400);
+   }
+ }
  if(p==="/api/admin/employees"){let q=(url.searchParams.get("q")||"").toLowerCase(),arr=DATA.employees.filter(e=>!q||[e.name,e.id,e.position,e.bereich,e.standort,e.startDate,e.endDate,e.endReason,apprenticeshipLabel(e)].join(" ").toLowerCase().includes(q)).slice(0,150);return json({employees:arr.map(e=>({id:e.id,name:e.name,position:e.position,startDate:e.startDate||null,endDate:e.endDate||null,lifecycle:employeeLifecycleStatus(e,new Date()),apprenticeYear:apprenticeshipYearForDate(e,new Date())}))})}
  if(p==="/api/admin/personnel-list"&&req.method==="GET"){let q=(url.searchParams.get("q")||"").trim().toLowerCase(),today=parseDateKey(berlinDateKey()),arr=DATA.employees.filter(e=>!q||[e.id,e.name,e.position,e.bereich,e.standort,e.employment,e.birthDate,e.startDate,e.endDate,apprenticeshipLabel(e,today)].join(" ").toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name,"de")),ur=await env.DB.prepare(`SELECT employee_id,username FROM users`).all(),um=new Map((ur.results||[]).map(x=>[x.employee_id,x.username]));return json({employees:arr.slice(0,400).map(e=>({id:e.id,name:e.name,position:e.position,businessArea:e.bereich,location:e.standort,employment:e.employment,birthDate:e.birthDate||null,startDate:e.startDate||null,endDate:e.endDate||null,endReason:e.endReason||null,retirementDate:e.birthDate?retirementDateFor(e.birthDate):null,apprenticeYear:apprenticeshipYearForDate(e,today),apprenticeLabel:apprenticeshipLabel(e,today),trainingPhase:apprenticeTrainingState(e,today).phase,mpuDate:apprenticeMilestones(e)?.mpuDate||null,classDExamDate:apprenticeMilestones(e)?.examDate||null,classDPassed:apprenticeTrainingState(e,today).classDPassed,lifecycle:employeeLifecycleStatus(e,today),username:um.get(e.id)||usernameFor(e)})),total:arr.length})}
  if(p==="/api/admin/reset-password"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let u=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(eid).first();if(!u){let username=await createInitialUserForEmployee(e,env);u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=1,updated_at=? WHERE username=?`).bind(ph,salt,now,u.username).run();await env.DB.prepare(`DELETE FROM sessions WHERE username=?`).bind(u.username).run();return json({ok:true,username:u.username,message:`Passwort von ${e.name} wurde auf ${INIT_PASSWORD} zurückgesetzt. Beim nächsten Login muss ein neues Passwort vergeben werden.`})}

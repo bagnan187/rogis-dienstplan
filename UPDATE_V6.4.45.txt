@@ -1,0 +1,9 @@
+ROGIS v6.4.45 – Hofbelegung direkt auf der Website planen
+
+- Administration > Betriebshof · Control Centre erhält den Button „Hofbelegung jetzt planen“.
+- Der Button verwendet den zuletzt vom Control Centre synchronisierten Depot-Slot-Bestand.
+- Die aktuell aktive Planwoche wird gezielt auf fehlende feste Stellplatzzuordnungen geprüft und bei Bedarf geplant.
+- Bereits vollständige und gültige Hofbelegungen bleiben unverändert; kein unnötiges Neu-Würfeln.
+- Bei zu wenigen Slots zeigt die Website aktive Slotzahl, Fahrzeugzahl und Teilbelegung an.
+- Planungsfehler nennen direkt den konkreten Grund, z. B. fehlenden passenden Start-/Rückgabestellplatz.
+- Mindestens einmal müssen die DepotSlot-Cubes über das Control Centre synchronisiert worden sein.
