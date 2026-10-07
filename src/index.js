@@ -1066,10 +1066,33 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
  return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,previewMode,missingVehicleAssignments:missing,slotCount:slots.length,depotOccupancy:occupancy,slotReservations:rr.summary,slotConflicts:rr.conflicts,vehicles};
 }
 
+async function planDepotDayV6462(env,date){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||"")))throw new Error("Ungültiges Datum.");
+ const mk=dateKey(mondayOf(parseDateKey(date)));
+ const row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+ if(!row)throw new Error("Für diese Woche existiert kein aktiver Dienstplan.");
+ let plan=JSON.parse(row.plan_json);
+ if(!plan?.days?.[date])throw new Error("Der ausgewählte Tag ist im aktiven Dienstplan nicht vorhanden.");
+ const [slots,fleet]=await Promise.all([loadDepotSlots(env),activeDepotFleet(env)]);
+ if(!slots.length)throw new Error("Keine synchronisierten Depot-Slots vorhanden.");
+ if(slots.length<fleet.length)throw new Error(`Zu wenige Slots für eine vollständige Hofbelegung: ${slots.length} Slots für ${fleet.length} aktive Wagen.`);
+ const temp={...plan,days:{[date]:JSON.parse(JSON.stringify(plan.days[date]))}};
+ await assignDepotSlotsToPlan(temp,env,slots,fleet);
+ plan.days[date]=temp.days[date];
+ const body=JSON.stringify(plan),now=new Date().toISOString();
+ await env.DB.batch([
+   env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version),
+   env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version)
+ ]);
+ await persistDepotPlanState(env,temp,now);
+ const assigned=Object.keys(plan.days[date]?.depotSlots||{}).length;
+ return{ok:true,date,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:assigned,previewMode:false,message:`Hofbelegung ${date}: ${assigned} von ${fleet.length} Wagen zugeordnet.`};
+}
+
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.61",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.62",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1107,32 +1130,9 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  }
  if(p==="/api/openomsi/depot-plan-day"&&req.method==="POST"){
    if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden."},401);
-   let b=await req.json(),date=String(b?.date||"");
-   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);
-   try{
-     const mk=dateKey(mondayOf(parseDateKey(date)));
-     const row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
-     if(!row)return json({error:"Für diese Woche existiert kein aktiver Dienstplan."},400);
-     let plan=JSON.parse(row.plan_json);
-     if(!plan?.days?.[date])return json({error:"Der ausgewählte Tag ist im aktiven Dienstplan nicht vorhanden."},400);
-     const slots=await loadDepotSlots(env),fleet=await activeDepotFleet(env);
-     if(!slots.length)return json({error:"Keine synchronisierten Depot-Slots vorhanden."},400);
-     if(slots.length<fleet.length)return json({error:`Zu wenige Slots für eine vollständige Hofbelegung: ${slots.length} Slots für ${fleet.length} aktive Wagen.`},400);
-
-     // Nur den angeforderten Betriebstag planen. Dadurch bleibt der Request klein genug
-     // für Cloudflare und die restlichen sechs Tage werden nicht neu berechnet.
-     const temp={...plan,days:{[date]:JSON.parse(JSON.stringify(plan.days[date]))}};
-     await assignDepotSlotsToPlan(temp,env,slots,fleet);
-     plan.days[date]=temp.days[date];
-     const body=JSON.stringify(plan),now=new Date().toISOString();
-     await env.DB.batch([
-       env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version),
-       env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version)
-     ]);
-     await persistDepotPlanState(env,temp,now);
-     const assigned=Object.keys(plan.days[date]?.depotSlots||{}).length;
-     return json({ok:true,date,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:assigned,previewMode:false,message:`Hofbelegung für ${date} gespeichert: ${assigned} von ${fleet.length} aktiven Wagen haben einen Stellplatz.`});
-   }catch(e){return json({error:"Tages-Hofplanung fehlgeschlagen: "+(e?.message||String(e))},400)}
+   const b=await req.json(),date=String(b?.date||"");
+   try{return json(await planDepotDayV6462(env,date))}
+   catch(e){return json({error:"Tages-Hofplanung fehlgeschlagen: "+(e?.message||String(e))},400)}
  }
  if(p==="/api/openomsi/depot-day"&&req.method==="GET"){
    let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
@@ -1152,30 +1152,12 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(su.role!=="admin")return json({error:"Administratorrechte erforderlich."},403);
  if(p==="/api/admin/depot-sync/reset"&&req.method==="POST"){const now=new Date().toISOString();await env.DB.batch([env.DB.prepare(`DELETE FROM depot_sync_pairing`),env.DB.prepare(`DELETE FROM depot_sync_clients`)]);await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES('depot_pairing_manual_reset',?,?)`).bind(su.username,now).run();return json({ok:true,message:"Depot-Verbindung zurückgesetzt. Beim nächsten Sync koppelt sich das Control Centre automatisch neu."})}
  if(p==="/api/admin/depot-plan"&&req.method==="POST"){
-   let b=await req.json(),mk=String(b.monday||"");
-   if(!/^\d{4}-\d{2}-\d{2}$/.test(mk))return json({error:"Ungültige Planwoche."},400);
-   let row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
-   if(!row)return json({error:"Für diese Woche existiert kein aktiver Dienstplan. Bitte zuerst den Dienstplan erzeugen."},400);
-   try{
-     let plan=JSON.parse(row.plan_json),fleet=await activeDepotFleet(env),slots=await loadDepotSlots(env);
-     if(!slots.length)return json({error:"Es sind noch keine Depot-Slots gespeichert. Bitte im Control Centre einmal „KI + Hofbelegung schreiben“ ausführen, damit die Slot-Cubes synchronisiert werden."},400);
-     const beforeDates=Object.keys(plan.days||{}).sort();
-     const wasComplete=beforeDates.length>0&&beforeDates.every(d=>Object.keys(plan.days[d]?.depotSlots||{}).length>=fleet.length);
-     plan=await ensureDepotPlanState(env,plan);
-     const dates=Object.keys(plan.days||{}).sort(),preview=!!plan.depotPreview||dates.some(d=>!!plan.days[d]?.depotPreview);
-     let missingByDay={};
-     for(const d of dates){
-       const assigned=Object.keys(plan.days[d]?.depotSlots||{}).length;
-       if(assigned<fleet.length)missingByDay[d]=Math.max(0,fleet.length-assigned);
-     }
-     if(preview||Object.keys(missingByDay).length){
-       const assignedCounts=dates.map(d=>Object.keys(plan.days[d]?.depotSlots||{}).length),minAssigned=assignedCounts.length?Math.min(...assignedCounts):0;
-       return json({ok:true,previewMode:true,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:minAssigned,missingByDay,message:`Teilbelegung gespeichert: mindestens ${minAssigned} von ${fleet.length} einsatzfähigen Fahrzeugen haben jetzt einen Stellplatz. ${slots.length} aktive Slots sind synchronisiert; nicht zugeordnete Wagen bleiben im Wageneinsatz als „Stellplatz noch nicht geplant“ markiert.`});
-     }
-     return json({ok:true,previewMode:false,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,alreadyComplete:wasComplete,message:wasComplete?`Hofbelegung für Planversion ${plan.version} war bereits vollständig und bleibt unverändert.`:`Hofbelegung für Planversion ${plan.version} wurde fest geplant und gespeichert.`});
-   }catch(e){
-     return json({error:"Hofbelegung konnte nicht geplant werden: "+(e?.message||String(e))},400);
-   }
+   return json({error:"Dieser alte Wochen-Hofplaner ist deaktiviert, damit kein Cloudflare-1102 mehr entsteht. Bitte die Seite neu laden; die Hofplanung läuft jetzt tageweise."},409);
+ }
+ if(p==="/api/admin/depot-plan-day"&&req.method==="POST"){
+   const b=await req.json(),date=String(b?.date||"");
+   try{return json(await planDepotDayV6462(env,date))}
+   catch(e){return json({error:"Tages-Hofplanung fehlgeschlagen: "+(e?.message||String(e))},400)}
  }
  if(p==="/api/admin/employees"){let q=(url.searchParams.get("q")||"").toLowerCase(),arr=DATA.employees.filter(e=>!q||[e.name,e.id,e.position,e.bereich,e.standort,e.startDate,e.endDate,e.endReason,apprenticeshipLabel(e)].join(" ").toLowerCase().includes(q)).slice(0,150);return json({employees:arr.map(e=>({id:e.id,name:e.name,position:e.position,startDate:e.startDate||null,endDate:e.endDate||null,lifecycle:employeeLifecycleStatus(e,new Date()),apprenticeYear:apprenticeshipYearForDate(e,new Date())}))})}
  if(p==="/api/admin/personnel-list"&&req.method==="GET"){let q=(url.searchParams.get("q")||"").trim().toLowerCase(),today=parseDateKey(berlinDateKey()),arr=DATA.employees.filter(e=>!q||[e.id,e.name,e.position,e.bereich,e.standort,e.employment,e.birthDate,e.startDate,e.endDate,apprenticeshipLabel(e,today)].join(" ").toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name,"de")),ur=await env.DB.prepare(`SELECT employee_id,username FROM users`).all(),um=new Map((ur.results||[]).map(x=>[x.employee_id,x.username]));return json({employees:arr.slice(0,400).map(e=>({id:e.id,name:e.name,position:e.position,businessArea:e.bereich,location:e.standort,employment:e.employment,birthDate:e.birthDate||null,startDate:e.startDate||null,endDate:e.endDate||null,endReason:e.endReason||null,retirementDate:e.birthDate?retirementDateFor(e.birthDate):null,apprenticeYear:apprenticeshipYearForDate(e,today),apprenticeLabel:apprenticeshipLabel(e,today),trainingPhase:apprenticeTrainingState(e,today).phase,mpuDate:apprenticeMilestones(e)?.mpuDate||null,classDExamDate:apprenticeMilestones(e)?.examDate||null,classDPassed:apprenticeTrainingState(e,today).classDPassed,lifecycle:employeeLifecycleStatus(e,today),username:um.get(e.id)||usernameFor(e)})),total:arr.length})}
