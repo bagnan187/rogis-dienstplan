@@ -20,7 +20,7 @@ const contacts=[
 {name:'Thomas Bongkar',position:'Leiter Außendienst / Fremdverkehr',department:'Außendienst',location:'Übergreifend'},
 {name:'Sebastian Blinkeisen',position:'Leitstellenmitarbeiter',department:'Leitstelle / Verkehrssteuerung',location:'Mitte'},
 {name:'Jeffrey Berken',position:'Nutzfahrzeugmechatroniker',department:'Werkstatt / Technik',location:'Mitte'}];
-const SALT='5d716d73646cd568639ca3b0e821e1fc',HASH='7785ad14e23e5933fbf9467d3dd0e1880e3c2cb06b24b16aa28b3bfed9d67ff0',IT=150000,enc=new TextEncoder(),shared=new Set(['news','dokumente','leitstelle','hoefe','akademie']);
+const SALT='5d716d73646cd568639ca3b0e821e1fc',HASH='57e999bf44b24891453a15a6695beda13c91aefb07f73433bc35a0fc3e1ba138',IT=150000,enc=new TextEncoder(),shared=new Set(['news','dokumente','leitstelle','hoefe','akademie']);
 const perms=u=>u.username==='emil.breitbau'?Object.keys(M):R[u.role]||[];
 const manage=(u,k)=>u.username==='emil.breitbau'||u.role==='Administration'||(['Geschäftsführung','Betriebsleitung'].includes(u.role)&&k!=='benutzer')||({werkstatt:['Werkstatt/Technik'],leitstelle:['Leitstelle','Disposition'],diensttausch:['Disposition'],akademie:['Ausbildung'],hoefe:['Disposition'],fremdverkehr:['Disposition']}[k]||[]).includes(u.role);
 const hex=a=>[...a].map(b=>b.toString(16).padStart(2,'0')).join(''),unhex=s=>Uint8Array.from(s.match(/../g)||[],x=>parseInt(x,16)),rnd=(n=24)=>{let a=new Uint8Array(n);crypto.getRandomValues(a);return hex(a)};
