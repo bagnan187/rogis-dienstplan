@@ -1,0 +1,10 @@
+ROGIS v6.4.43 – Ausbildungs-Mitfahrten 1. und 2. Lehrjahr
+
+- Azubis im 1. Lehrjahr durchlaufen zusätzlich die Rotation „Fahrdienst / Linienbetrieb“.
+- In dieser Rotation fahren sie an ausgewählten Werktagen bei einem echten ROGIS-Fahrerdienst mit.
+- Azubis im 2. Lehrjahr fahren während der Klasse-D-Praxis regelmäßig, aber nur an ausgewählten Tagen mit statt automatisch an jedem Praxistag.
+- Pro Fahrerdienst höchstens ein mitfahrender Azubi.
+- Jugendarbeitsschutz-Zeitfenster bleibt berücksichtigt.
+- Beim Fahrer wird auf jedem betroffenen Dienstsegment immer eine sichtbare Bemerkung mit Name und Lehrjahr angehängt.
+- Die Bemerkung erscheint auch in der Dienstkarte.
+- Die eigene Azubi-Ansicht zeigt im 1. Lehrjahr „Bereichsrotation Fahrdienst / Mitfahrt“ und im 2. Lehrjahr „Begleitfahrt Klasse D“.
