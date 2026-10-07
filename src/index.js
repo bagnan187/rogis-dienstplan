@@ -15,15 +15,41 @@ function hash(s){let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeA
 function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 function shuffle(a,seed){a=[...a];let r=rng(hash(seed));for(let i=a.length-1;i>0;i--){let j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 const STOP_RENAMES_CI=new Map(Object.entries(DATA.renames||{}).map(([k,v])=>[String(k).trim().toLocaleLowerCase("de-DE"),v]));
-function renameStop(x){
- if(!x)return "";
- let y=String(x).trim();
+function resolveStopBaseName(raw){
+ let y=String(raw||"").trim();
  for(let i=0;i<8;i++){
    const next=DATA.renames[y]||STOP_RENAMES_CI.get(y.toLocaleLowerCase("de-DE"));
    if(!next||next===y)break;
    y=next;
  }
  return y.replace("Park der Menschenr.","Park der Menschenrechte").replace("Laupendahl ZOB","Laupendahl Hbf/ZOB");
+}
+function renameStop(x){
+ if(!x)return "";
+ const raw=String(x).trim();
+
+ // Zuerst den vollständigen Namen versuchen. Das erhält explizite Mappings,
+ // falls irgendwann ein kompletter Name inklusive Zusatz hinterlegt wird.
+ const full=resolveStopBaseName(raw);
+ if(full!==raw)return full;
+
+ // TTData hängt Steig-/Bussteig-/Gleisangaben häufig in Klammern an den Namen,
+ // z.B. "Versorgungsamt (Steig 2)". Nur der Grundname wird umbenannt;
+ // der betriebliche Zusatz bleibt unverändert erhalten.
+ const m=raw.match(/^(.+?)(\s+\((?:Steig|Bussteig|Bahnsteig|Gleis|P\s*\d)[^)]*\))$/i);
+ if(m){
+   const base=resolveStopBaseName(m[1]);
+   if(base!==m[1].trim())return base+m[2];
+ }
+
+ // Dasselbe für Quellen ohne Klammern, z.B. "Versorgungsamt Steig 2".
+ const u=raw.match(/^(.+?)(\s+(?:Steig|Bussteig|Bahnsteig|Gleis)\s+\d+[A-Za-z]?)$/i);
+ if(u){
+   const base=resolveStopBaseName(u[1]);
+   if(base!==u[1].trim())return base+u[2];
+ }
+
+ return full;
 }
 const STOP_NAME_FIELDS=new Set(["startLoc","endLoc","startPlace","endPlace","location","stop","stopName"]);
 function normalizeStopNames(value,key=""){
@@ -845,7 +871,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.40",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.41",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
