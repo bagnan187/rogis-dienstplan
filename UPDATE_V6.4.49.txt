@@ -1,0 +1,8 @@
+ROGIS v6.4.49 – 1102-Fix für Aktualisieren
+
+- /api/week-state und /api/health laufen jetzt vollständig VOR ensureSchemaOnce().
+- Der 7-Sekunden-Livecheck und der manuelle Aktualisieren-Button lösen auf kalten Worker-Isolaten keine Schema-/Migrationsprüfung mehr aus.
+- /api/week-state macht nur Sessionprüfung + zwei kleine D1-Leseabfragen.
+- Doppelte spätere /api/week-state-Route entfernt.
+- Schema-Prüfung wird nach erfolgreicher Migration mit app_meta schema_ready_v6449 markiert und auf neuen Isolaten nicht unnötig komplett wiederholt.
+- Ziel: Cloudflare Worker Error 1102 beim normalen Website-Refresh endgültig beseitigen.

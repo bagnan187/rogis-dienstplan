@@ -947,7 +947,18 @@ async function ensureDepotPairingMigrationV6431(env){
  await env.DB.prepare(`DELETE FROM depot_sync_pairing`).run();
  await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES(?,?,?)`).bind(key,"done",now).run();
 }
-let schemaReadyPromise=null;async function ensureSchemaOnce(env){if(!schemaReadyPromise)schemaReadyPromise=(async()=>{await ensureSchema(env);await ensureDepotPairingMigrationV6431(env)})().catch(e=>{schemaReadyPromise=null;throw e});return schemaReadyPromise}
+let schemaReadyPromise=null;async function ensureSchemaOnce(env){
+ if(!schemaReadyPromise)schemaReadyPromise=(async()=>{
+   let ready=null;
+   try{ready=await env.DB.prepare(`SELECT value FROM app_meta WHERE key='schema_ready_v6449'`).first()}catch{}
+   if(!ready){
+     await ensureSchema(env);
+     await ensureDepotPairingMigrationV6431(env);
+     await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES('schema_ready_v6449','done',?)`).bind(new Date().toISOString()).run();
+   }
+ })().catch(e=>{schemaReadyPromise=null;throw e});
+ return schemaReadyPromise;
+}
 
 const OPENOMSI_TT_LINE_BY_DAYTYPE={WK:"Montag-Freitag",SA:"Samstag",SO:"Sonn- und Feiertag"};
 function openOmsiDayPayload(plan,date){
@@ -979,12 +990,14 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
  return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:!!j.depotAssignmentsFixed,previewMode:!!j.previewMode,missingVehicleAssignments:j.missingVehicleAssignments||[],slotCount:j.slotCount||0,depotOccupancy:j.depotOccupancy||{},slotReservations:j.slotReservations||{},slotConflicts:j.slotConflicts||[],vehicles:j.rows.map(r=>({vehicle:r.vehicle,vehicleNumber:Number((String(r.vehicle||"").match(/\d+/)||[0])[0])||null,model:r.model||"",used:!!r.used,runs:r.runs||[],startDepot:r.startDepot||null,startSlot:r.startSlot||null,endDepot:r.endDepot||null,endSlot:r.endSlot||r.returnSlot||null,slotType:r.slotType||null,startTime:r.startTime||null,endTime:r.endTime||null}))};
 }
 
-async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.48",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+async function route(req,env){let url=new URL(req.url),p=url.pathname;
+ // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
+ // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.49",time:new Date().toISOString(),checks:{lightweight:true}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
-   const sess=await env.DB.prepare(`SELECT s.username,s.expires_at FROM sessions s WHERE s.token=?`).bind(tok).first();
+   const sess=await env.DB.prepare(`SELECT username,expires_at FROM sessions WHERE token=?`).bind(tok).first();
    if(!sess||String(sess.expires_at||"")<new Date().toISOString())return json({error:"Nicht angemeldet."},401);
    const mk=url.searchParams.get("monday")||dateKey(mondayOf(new Date())),end=dateKey(addDays(parseDateKey(mk),6));
    const [r,o]=await Promise.all([
@@ -993,6 +1006,7 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
    ]);
    return json({version:Number(r?.version||0),generatedAt:r?.generated_at||null,overridesUpdatedAt:o?.u||null},200,{"cache-control":"no-store"});
  }
+ await ensureSchemaOnce(env);
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
@@ -1028,7 +1042,7 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
  if(p==="/api/me")return json({user:{id:emp.id,name:emp.name,username:su.username,role:su.role,position:emp.position},mustChange:!!su.must_change});
  if(p==="/api/change-password"&&req.method==="POST"){let b=await req.json(),np=String(b.newPassword||"");if(np.length<8)return json({error:"Das neue Passwort muss mindestens 8 Zeichen haben."},400);if(await pwHash(String(b.oldPassword||""),su.salt)!==su.password_hash)return json({error:"Altes Passwort ist nicht korrekt."},400);let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(np,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=0,updated_at=? WHERE username=?`).bind(ph,salt,now,su.username).run();return json({ok:true})}
  if(p==="/api/week"){let mk=url.searchParams.get("monday")||dateKey(mondayOf(new Date())),plan=await ensureWeek(env,mk,"auto-on-request",false);return json(await userWeek(plan,emp,env))}
- if(p==="/api/week-state"){let mk=url.searchParams.get("monday")||dateKey(mondayOf(new Date())),end=dateKey(addDays(parseDateKey(mk),6)),[r,o]=await Promise.all([env.DB.prepare(`SELECT version,generated_at FROM week_plans WHERE monday=?`).bind(mk).first(),env.DB.prepare(`SELECT MAX(updated_at) updated_at FROM duty_overrides WHERE duty_date>=? AND duty_date<=?`).bind(mk,end).first()]);return json({version:Number(r?.version||0),generatedAt:r?.generated_at||null,overridesUpdatedAt:o?.updated_at||null})}
+
  if(p==="/api/objections"&&req.method==="GET"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE employee_id=? ORDER BY created_at DESC LIMIT 50`).bind(emp.id).all();return json({items:r.results||[]})}
  if(p==="/api/objections"&&req.method==="POST"){let b=await req.json(),rd=String(b.requestedDate||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(rd))return json({error:"Bitte Datum auswählen."},400);let type=String(b.type||"Sonstiges"),requestedTime=String(b.requestedTime||"");if(type==="Urlaubswunsch"){let end=/^\d{4}-\d{2}-\d{2}$/.test(requestedTime)?requestedTime:rd,cap=await vacationCapacityForRange(env,emp.id,rd,end);if(!cap.ok)return json({error:cap.error},400);let used=await vacationDaysUsed(env,emp.id,Number(rd.slice(0,4)));if(used>=ANNUAL_VACATION_DAYS)return json({error:`Für ${rd.slice(0,4)} sind bereits alle ${ANNUAL_VACATION_DAYS} Urlaubstage verbraucht.`},400);if(!/^\d{4}-\d{2}-\d{2}$/.test(requestedTime))requestedTime=rd}let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`).bind(emp.id,emp.name,rd,type,requestedTime,String(b.message||""),now,now).run();return json({ok:true})}
  if(su.role!=="admin")return json({error:"Administratorrechte erforderlich."},403);
