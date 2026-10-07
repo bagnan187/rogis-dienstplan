@@ -1,0 +1,9 @@
+ROGIS Backend v6.4.51 – Cloudflare 1102 Live-Refresh Hotfix
+
+- /api/week-state scannt duty_overrides nicht mehr mit MAX(updated_at).
+- Stattdessen wird ein einzelner Revisionswert app_meta.duty_revision gelesen.
+- Neue Planversionen erhöhen die Dienstrevision automatisch.
+- Direkte Dienständerungen erhöhen die Revision ebenfalls.
+- Der Live-Poll läuft nur noch alle 20 Sekunden statt alle 7 Sekunden.
+- Der manuelle Aktualisieren-Button bleibt sofort verfügbar.
+- Ziel: den letzten wiederkehrenden Cloudflare Worker 1102 beim normalen Website-Refresh beseitigen.
