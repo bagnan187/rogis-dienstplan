@@ -169,11 +169,16 @@ async function loadObjections(){let j=await api('/api/objections');$('#myObjecti
 async function loadFleetStatus(){if(me.role!=='admin')return;try{let j=await api('/api/admin/fleet-status');$('#fleetKpis').innerHTML=[[j.vehicleCount,'Fahrzeuge gesamt'],[j.activeCount,'einsatzfähig'],[j.unavailableCount,'gesperrt / nicht verfügbar']].map(x=>`<div class="card kpi"><div class="n">${x[0]}</div><div class="small">${x[1]}</div></div>`).join('');let when=j.lastSuccessAt?new Date(j.lastSuccessAt).toLocaleString('de-DE'):'noch nie';$('#fleetStatusText').textContent=`Letzte erfolgreiche Synchronisierung: ${when} · Status: ${j.status}${j.message?' · '+j.message:''}`}catch(e){$('#fleetStatusText').textContent=e.message}}
 async function syncFleetNow(){let b=$('#fleetSync');b.disabled=true;$('#fleetSyncMsg').textContent='Synchronisierung läuft …';try{let j=await api('/api/admin/fleet-sync',{method:'POST'});$('#fleetSyncMsg').textContent=j.message;await loadFleetStatus()}catch(e){$('#fleetSyncMsg').textContent=e.message}finally{b.disabled=false}}
 async function planDepotNow(){
- if(!confirm('Feste Hofbelegung für die aktuell angezeigte Planwoche prüfen und fehlende Stellplatzzuordnungen planen?'))return;
- let b=$('#planDepotNow'),msg=$('#depotPlanMsg');b.disabled=true;msg.textContent='Hofbelegung wird geplant …';
+ if(!confirm('Feste Hofbelegung für die aktuell angezeigte Planwoche tageweise prüfen und fehlende Stellplatzzuordnungen planen?'))return;
+ let b=$('#planDepotNow'),msg=$('#depotPlanMsg');b.disabled=true;
  try{
-   let j=await api('/api/admin/depot-plan',{method:'POST',body:JSON.stringify({monday:dk(monday)})});
-   msg.textContent=j.message;
+   let last=null;
+   for(let i=0;i<7;i++){
+     const date=dk(addDays(monday,i));
+     msg.textContent=`Hofbelegung wird geplant … Tag ${i+1}/7 · ${fdate(date)}`;
+     last=await api('/api/admin/depot-plan-day',{method:'POST',body:JSON.stringify({date})});
+   }
+   msg.textContent=(last?.message||'Hofbelegung tageweise abgeschlossen.')+' · Alle 7 Tage geprüft.';
    if(!$('#tab-vehicles').classList.contains('hidden'))await loadVehicleOverview();
  }catch(e){msg.textContent=e.message}
  finally{b.disabled=false}
