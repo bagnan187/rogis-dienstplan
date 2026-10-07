@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.51";
+        Text="ROGIS Control Centre v6.4.52";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -79,7 +79,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(Button("Einstellungen speichern",(_,__)=>SaveConfig()));
         buttons.Controls.Add(Button("Status aktualisieren",async(_,__)=>await Safe(RefreshOnlyAsync)));
         buttons.Controls.Add(_liveAi);
-        buttons.Controls.Add(Button("Live-Hof + KI vorbereiten",async(_,__)=>await Safe(SyncAndWriteAsync)));
+        buttons.Controls.Add(Button("KI + Slot-Sync",async(_,__)=>await Safe(SyncAndWriteAsync)));
         buttons.Controls.Add(Button("Synchronisieren + openOMSI starten",async(_,__)=>await Safe(LaunchAsync)));
         cfgGrid.Controls.Add(buttons,0,3);cfgGrid.SetColumnSpan(buttons,4);
         cfgBox.Controls.Add(cfgGrid);
@@ -239,9 +239,12 @@ public sealed class MainForm : Form
         var ocu=OcuGenerator.Write(_cfg,ai,Log);
         _lastLiveAiSignature=AiSignature(ai);
         _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
-        var statics=StaticRuntime.Build(_cfg,mapDir,slots,depot,Log);
+        // WICHTIG während der laufenden DepotSlot-Bauphase:
+        // Keine ROGIS_RT-Objekte in *.map schreiben. Die Map wird ausschließlich gelesen,
+        // um die bereits platzierten Slot-Cubes zu erkennen und zur Website zu synchronisieren.
+        // Live-Hof-Mapobjekte werden erst wieder aktiviert, wenn der Slot-Ausbau abgeschlossen ist.
         Log($"KI-Datei geschrieben: {ocu}");
-        Log($"{statics} Live-Hof-Businstanzen vorbereitet. START-Busse verschwinden zur Ausfahrt, END-Busse erscheinen zur Rückkehr automatisch per OMSI-Zeit; während der laufenden Session ist dafür kein Neuschreiben der Map nötig.");
+        Log("Slot-Sync abgeschlossen. Die .map-Dateien wurden NICHT verändert; Live-Hof-Objekte werden während der Slot-Bauphase bewusst noch nicht geschrieben.");
         Render(ai,depot,slots);
     }
 
@@ -260,7 +263,7 @@ public sealed class MainForm : Form
         if(string.IsNullOrWhiteSpace(exe)||!File.Exists(exe))
             throw new FileNotFoundException("openOMSI.exe nicht gefunden. Bitte in den Einstellungen eintragen.",exe);
         Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});
-        Log("openOMSI gestartet. Der Live-Hof ist vorbereitet: Busse schalten ihre Sichtbarkeit zur geplanten Aus-/Rückfahrzeit automatisch. Kein OMSI-Neustart für diese Zeitwechsel nötig.");
+        Log("openOMSI gestartet. KI/Slot-Sync ist vorbereitet; die .map-Dateien bleiben während der Slot-Bauphase unverändert.");
     }
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)

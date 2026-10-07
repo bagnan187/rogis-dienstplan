@@ -1,0 +1,8 @@
+ROGIS Control Centre v6.4.52 – Map-Schreibsperre während DepotSlot-Bauphase
+
+- Control Centre schreibt derzeit KEINE ROGIS_RT-Objekte in *.map.
+- DepotSlots werden nur aus der Map gelesen und zur Website synchronisiert.
+- KI/OCU-Synchronisierung bleibt aktiv.
+- Vorhandene DepotSlot-.sco/.o3d werden weiterhin nicht überschrieben.
+- Button heißt vorerst „KI + Slot-Sync“.
+- Die Live-Hof-Mapobjekte werden erst wieder aktiviert, wenn der Slot-Ausbau abgeschlossen ist.
