@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.50";
+        Text="ROGIS Control Centre v6.4.51";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -79,7 +79,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(Button("Einstellungen speichern",(_,__)=>SaveConfig()));
         buttons.Controls.Add(Button("Status aktualisieren",async(_,__)=>await Safe(RefreshOnlyAsync)));
         buttons.Controls.Add(_liveAi);
-        buttons.Controls.Add(Button("KI + Hofbelegung schreiben",async(_,__)=>await Safe(SyncAndWriteAsync)));
+        buttons.Controls.Add(Button("Live-Hof + KI vorbereiten",async(_,__)=>await Safe(SyncAndWriteAsync)));
         buttons.Controls.Add(Button("Synchronisieren + openOMSI starten",async(_,__)=>await Safe(LaunchAsync)));
         cfgGrid.Controls.Add(buttons,0,3);cfgGrid.SetColumnSpan(buttons,4);
         cfgBox.Controls.Add(cfgGrid);
@@ -230,7 +230,7 @@ public sealed class MainForm : Form
         if(!depot.depotAssignmentsFixed&&!depot.previewMode)
             throw new InvalidOperationException("Die Website hat noch keine feste Stellplatzplanung gespeichert.");
         if(depot.previewMode)
-            Log("TESTMODUS: Es sind noch nicht genug Stellplätze für die gesamte Flotte vorhanden. Nur bereits angelegte Slots werden testweise mit Bussen belegt; dieser Vorschauzustand wird nicht als endgültiger Fahrzeugstand gespeichert.");
+            Log("TESTMODUS: Es sind noch nicht genug Stellplätze für die gesamte Flotte vorhanden. Die vorhandenen Zuordnungen werden trotzdem für den Live-Hof vorbereitet.");
         if(depot.slotConflicts is {Length:>0})
             throw new InvalidOperationException("Stellplatzkonflikt: "+string.Join(", ",depot.slotConflicts.Select(x=>x.slotId).Distinct()));
         if(depot.missingVehicleAssignments is {Length:>0})
@@ -241,7 +241,7 @@ public sealed class MainForm : Form
         _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
         var statics=StaticRuntime.Build(_cfg,mapDir,slots,depot,Log);
         Log($"KI-Datei geschrieben: {ocu}");
-        Log($"{statics} Static-Bus-Instanzen für die fest geplante Hofbelegung geschrieben.");
+        Log($"{statics} Live-Hof-Businstanzen vorbereitet. START-Busse verschwinden zur Ausfahrt, END-Busse erscheinen zur Rückkehr automatisch per OMSI-Zeit; während der laufenden Session ist dafür kein Neuschreiben der Map nötig.");
         Render(ai,depot,slots);
     }
 
@@ -260,7 +260,7 @@ public sealed class MainForm : Form
         if(string.IsNullOrWhiteSpace(exe)||!File.Exists(exe))
             throw new FileNotFoundException("openOMSI.exe nicht gefunden. Bitte in den Einstellungen eintragen.",exe);
         Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});
-        Log("openOMSI gestartet. Die Stellplatzplanung bleibt unverändert; das Spiel liest nur den vorbereiteten Stand.");
+        Log("openOMSI gestartet. Der Live-Hof ist vorbereitet: Busse schalten ihre Sichtbarkeit zur geplanten Aus-/Rückfahrzeit automatisch. Kein OMSI-Neustart für diese Zeitwechsel nötig.");
     }
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)

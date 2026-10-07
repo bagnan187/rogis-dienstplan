@@ -1,9 +1,11 @@
-ROGIS Backend v6.4.51 – Cloudflare 1102 Live-Refresh Hotfix
+ROGIS Control Centre v6.4.51 – Live-Hof ohne Slot-Dateien zu überschreiben
 
-- /api/week-state scannt duty_overrides nicht mehr mit MAX(updated_at).
-- Stattdessen wird ein einzelner Revisionswert app_meta.duty_revision gelesen.
-- Neue Planversionen erhöhen die Dienstrevision automatisch.
-- Direkte Dienständerungen erhöhen die Revision ebenfalls.
-- Der Live-Poll läuft nur noch alle 20 Sekunden statt alle 7 Sekunden.
-- Der manuelle Aktualisieren-Button bleibt sofort verfügbar.
-- Ziel: den letzten wiederkehrenden Cloudflare Worker 1102 beim normalen Website-Refresh beseitigen.
+- Button heißt jetzt „Live-Hof + KI vorbereiten“.
+- Die Tagesbelegung schreibt START-, END- und IDLE-Businstanzen einmal vor dem Kartenstart in die Map.
+- START-Instanzen sind bis zur Ausfahrt sichtbar und verschwinden danach automatisch.
+- END-Instanzen sind zunächst unsichtbar und erscheinen ab der geplanten Rückkehrzeit automatisch.
+- Dafür ist während der laufenden OMSI-Session kein Neustart nötig, solange die Live-Hof-Vorbereitung vor dem Laden der Kachel erfolgt ist.
+- Der AssetInstaller überschreibt KEINE vorhandenen DepotSlot-Dateien mehr.
+- Insbesondere vorhandene .sco und .o3d unter Sceneryobjects\ROGIS_DepotSlots bleiben unverändert.
+- Fehlende DepotSlot-Dateien dürfen weiterhin ergänzt werden; vorhandene Dateien werden niemals ersetzt.
+- ROGIS-Runtime-Dateien unter Sceneryobjects\ROGISstatic bleiben getrennt und dürfen weiterhin aktualisiert werden.

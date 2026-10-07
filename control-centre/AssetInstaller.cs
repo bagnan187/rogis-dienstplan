@@ -11,8 +11,10 @@ public static class AssetInstaller
         var dstScenery=Path.Combine(cfg.OmsiRoot,"Sceneryobjects","ROGIS_DepotSlots");
         if(Directory.Exists(srcScenery))
         {
-            CopyTree(srcScenery,dstScenery);
-            log?.Invoke("ROGIS-DepotSlot-Objekte installiert/aktualisiert.");
+            var copied=CopyTreeMissingOnly(srcScenery,dstScenery);
+            log?.Invoke(copied>0
+                ? $"ROGIS-DepotSlots: {copied} fehlende Datei(en) ergänzt. Vorhandene .sco/.o3d und sonstige Slot-Dateien wurden NICHT überschrieben."
+                : "ROGIS-DepotSlots: vorhandener Stand bleibt unverändert; keine Datei überschrieben.");
         }
 
         var lua=Path.Combine(srcRoot,"plugins","ROGIS_DepotSync.lua");
@@ -29,16 +31,20 @@ public static class AssetInstaller
         }
     }
 
-    static void CopyTree(string source,string target)
+    static int CopyTreeMissingOnly(string source,string target)
     {
         Directory.CreateDirectory(target);
         foreach(var dir in Directory.EnumerateDirectories(source,"*",SearchOption.AllDirectories))
             Directory.CreateDirectory(Path.Combine(target,Path.GetRelativePath(source,dir)));
+        var copied=0;
         foreach(var file in Directory.EnumerateFiles(source,"*",SearchOption.AllDirectories))
         {
             var dst=Path.Combine(target,Path.GetRelativePath(source,file));
             Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
-            File.Copy(file,dst,true);
+            if(File.Exists(dst))continue;
+            File.Copy(file,dst,false);
+            copied++;
         }
+        return copied;
     }
 }

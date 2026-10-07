@@ -67,6 +67,10 @@ public static class StaticRuntime
             }
         }
 
+        // Alle START-/END-/IDLE-Instanzen werden vor dem Kartenstart in die Map geschrieben.
+        // Danach schaltet ausschließlich das OMSI-Sichtbarkeitsscript anhand Datum/Uhrzeit.
+        // Dadurch erscheinen zurückkehrende Busse in einer laufenden Session ohne Map-Neuladen,
+        // solange diese Vorbereitung vor dem Laden der betreffenden Kachel erfolgt ist.
         foreach(var kv in additions)AppendObjects(kv.Key,kv.Value);
         return count;
     }
