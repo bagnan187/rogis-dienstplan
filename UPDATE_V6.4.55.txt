@@ -1,0 +1,8 @@
+ROGIS v6.4.55 – Hofslot-Zuordnung gegen aufgeblähte Flotte abgesichert
+
+- activeDepotFleet verwendet für bekannte ROGIS-Wagen jetzt zwingend den kanonischen DATA.fleet-regular-Status.
+- Alte oder fehlerhaft synchronisierte Google-Sheets-Zeilen können die aktive Hof-Flotte nicht mehr künstlich auf >401 Fahrzeuge aufblasen.
+- Wagen 1603 bleibt weiterhin ausgeschlossen.
+- Unbekannte/neue Fahrzeuge werden nur berücksichtigt, wenn sie explizit regular=true UND Status „Im Betrieb“ haben.
+- Bei aktuellem Stammfuhrpark ergibt die Hofplanung wieder 323 regulär disponierbare Wagen.
+- Mit 401 aktiven Slots darf ensureDepotPlanState damit nicht mehr wegen Slotanzahl in den TESTMODUS wechseln.

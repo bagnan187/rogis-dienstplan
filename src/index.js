@@ -304,7 +304,18 @@ function usageForDay(day){
  return out;
 }
 async function activeDepotFleet(env){
- const fleet=(await loadFleetFromDb(env)).filter(v=>!!v.regular&&Number(v.number)!==1603);
+ const dbFleet=await loadFleetFromDb(env);
+ const canonical=new Map((DATA.fleet||[]).map(v=>[Number(v.number),v]));
+ const fleet=dbFleet.filter(v=>{
+   const num=Number(v.number);
+   if(!Number.isFinite(num)||num===1603)return false;
+   const base=canonical.get(num);
+   // Solange der ROGIS-Stammfuhrpark den Wagen kennt, ist dessen regular-Flag maßgeblich.
+   // Damit können alte/stale Google-Sheets-Zeilen die Hofplanung nicht auf >Flottenstärke aufblasen.
+   if(base)return !!base.regular;
+   // Unbekannte/neue Wagen werden nur aufgenommen, wenn sie im Sheet explizit regulär disponierbar sind.
+   return !!v.regular&&String(v.status||"").trim().toLowerCase()==="im betrieb";
+ });
  return fleet.sort((a,b)=>Number(a.number)-Number(b.number));
 }
 async function assignDepotSlotsToPlan(plan,env){
@@ -1009,7 +1020,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.54",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.55",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
