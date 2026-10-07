@@ -304,7 +304,7 @@ function usageForDay(day){
  return out;
 }
 async function activeDepotFleet(env){
- const fleet=(await loadFleetFromDb(env)).filter(v=>v.regular||String(v.status||"").trim().toLowerCase()==="im betrieb");
+ const fleet=(await loadFleetFromDb(env)).filter(v=>!!v.regular&&Number(v.number)!==1603);
  return fleet.sort((a,b)=>Number(a.number)-Number(b.number));
 }
 async function assignDepotSlotsToPlan(plan,env){
@@ -529,12 +529,16 @@ async function syncDepotSlotsV6425(env,rawSlots,source="ROGIS Control Centre"){
  }
  if(!clean.length)throw new Error("Keine gültig beschrifteten Depot-Slots gefunden. Erwartet werden z. B. M001, S001 oder H001.");
  await env.DB.prepare(`UPDATE depot_slots SET active=0`).run();
- for(const x of clean)await env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now).run();
+ for(let i=0;i<clean.length;i+=80){
+   const batch=clean.slice(i,i+80).map(x=>env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now));
+   await env.DB.batch(batch);
+ }
  // Gültige feste Zuordnungen behalten. Nur Verweise auf inzwischen entfernte Slots verwerfen.
  await env.DB.prepare(`DELETE FROM depot_slot_assignments
    WHERE (start_slot IS NOT NULL AND start_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))
       OR (return_slot IS NOT NULL AND return_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))`).run();
- return{ok:true,slotCount:clean.length,syncedAt:now,source};
+ const typeCounts=clean.reduce((a,x)=>(a[x.type]=(a[x.type]||0)+1,a),{});
+ return{ok:true,slotCount:clean.length,slotTypes:typeCounts,syncedAt:now,source};
 }
 
 function generateWeek(monday,version=1,cfg={},fleet=DATA.fleet,seed="",employeeSettings={}){let settings={...DEFAULT_GENERATION_SETTINGS,_seed:seed},days={};for(let i=0;i<7;i++){let d=addDays(monday,i);days[dateKey(d)]=buildDay(d,settings,fleet,seed,employeeSettings)}return{monday:dateKey(monday),generatedAt:new Date().toISOString(),version,seed,settings,employeeSettings:{...employeeSettings},employeeSeeds:{},days}}
@@ -594,7 +598,14 @@ async function pwHash(password,saltB64){let enc=new TextEncoder(),key=await cryp
 function randomToken(n=32){let a=new Uint8Array(n);crypto.getRandomValues(a);return b64(a).replace(/[+/=]/g,"").slice(0,n*2)}
 const FLEET_SHEET_DEFAULT="https://docs.google.com/spreadsheets/d/1-fqifc5Edw_zNYoA9j7aP4Gq4JW8EOskuMhJnPkzsec/export?format=csv&gid=0";
 function parseCsv(text){let rows=[],row=[],cell="",q=false;for(let i=0;i<text.length;i++){let c=text[i];if(q){if(c==='"'&&text[i+1]==='"'){cell+='"';i++}else if(c==='"')q=false;else cell+=c}else if(c==='"')q=true;else if(c===','){row.push(cell);cell=""}else if(c==='\n'){row.push(cell.replace(/\r$/,''));rows.push(row);row=[];cell=""}else cell+=c}if(cell.length||row.length){row.push(cell.replace(/\r$/,''));rows.push(row)}return rows}
-function normalizedVehicleStatus(raw,model,num){let x=String(raw||"").trim();if(x)return x;if(num===1603)return"Fahrschulbus";if(/MAN Electric NewLionsCity/i.test(model))return"Noch nicht ausgeliefert";return"Im Betrieb"}
+function normalizedVehicleStatus(raw,model,num){
+ let x=String(raw||"").trim();if(x)return x;
+ if(num===1603)return"Fahrschulbus";
+ const base=DATA.fleet.find(v=>Number(v.number)===Number(num));
+ if(base)return base.regular?"Im Betrieb":(/electric|elektro|e[ -]?lion|elnlc|lion.?s city e|ecitaro|e-citaro/i.test(String(model||base.model||""))?"Noch nicht ausgeliefert":"Nicht im Betrieb");
+ // Unbekannte/neue Fahrzeuge ohne gepflegten Status niemals automatisch disponieren.
+ return"Nicht im Betrieb";
+}
 function activeVehicleStatus(status){return /^im betrieb$/i.test(String(status||"").trim())}
 function deriveVehicleGroup(model,base){if(base?.group)return base.group;return /A23|18C|19C|\bG\b|Gelenk/i.test(model)?"artic":"solo"}
 async function recordFleetSync(env,state){let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO fleet_sync_state(id,source_url,last_success_at,last_attempt_at,status,message,vehicle_count,active_count,unavailable_count) VALUES(1,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_url=excluded.source_url,last_success_at=CASE WHEN excluded.status='ok' THEN excluded.last_success_at ELSE fleet_sync_state.last_success_at END,last_attempt_at=excluded.last_attempt_at,status=excluded.status,message=excluded.message,vehicle_count=excluded.vehicle_count,active_count=excluded.active_count,unavailable_count=excluded.unavailable_count`).bind(state.source||FLEET_SHEET_DEFAULT,state.status==='ok'?now:null,now,state.status,state.message||'',state.vehicleCount||0,state.activeCount||0,state.unavailableCount||0).run()}
@@ -998,7 +1009,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.51",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.54",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);

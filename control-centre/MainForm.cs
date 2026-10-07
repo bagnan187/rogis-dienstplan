@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.53";
+        Text="ROGIS Control Centre v6.4.54";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -214,15 +214,18 @@ public sealed class MainForm : Form
     async Task SyncAndWriteAsync()
     {
         SaveConfig();
-        AssetInstaller.Install(_cfg,Log);
+        await Task.Run(()=>AssetInstaller.Install(_cfg,Log));
         var mapDir=MapDir();
-        var slots=OmsiSlotScanner.Scan(mapDir,Log);
+        _status.Text="Lese DepotSlots aus der Karte …";
+        var slots=await Task.Run(()=>OmsiSlotScanner.Scan(mapDir,Log));
         if(slots.Count==0)throw new InvalidOperationException("Keine beschrifteten ROGIS-DepotSlot-Objekte gefunden.");
 
         using var api=new DienstplanApi(_cfg);
         var date=_date.Value.Date;
+        _status.Text=$"Synchronisiere {slots.Count} DepotSlots …";
         var sync=await api.SyncSlotsAsync(slots,date);
-        Log($"{sync.slotCount} Stellplätze an den Dienstplan synchronisiert.");
+        var localTypes=slots.GroupBy(x=>x.slotType).OrderBy(x=>x.Key).Select(g=>$"{g.Key}: {g.Count()}");
+        Log($"{sync.slotCount} Stellplätze an den Dienstplan synchronisiert · "+string.Join(" · ",localTypes));
 
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
@@ -235,6 +238,8 @@ public sealed class MainForm : Form
             throw new InvalidOperationException("Stellplatzkonflikt: "+string.Join(", ",depot.slotConflicts.Select(x=>x.slotId).Distinct()));
         if(depot.missingVehicleAssignments is {Length:>0})
             Log($"WARNUNG: {depot.missingVehicleAssignments.Length} Wagen haben in dieser Planversion keinen gespeicherten Stellplatz.");
+        var assigned=(depot.vehicles??Array.Empty<DepotVehicle>()).Count(v=>!string.IsNullOrWhiteSpace(v.startSlot));
+        Log($"Hofplanung: {depot.vehicles?.Length??0} Wagen im Tagespayload · {assigned} mit Startstellplatz · {depot.slotCount} aktive Slots.");
 
         var ocu=OcuGenerator.Write(_cfg,ai,Log);
         _lastLiveAiSignature=AiSignature(ai);
@@ -242,7 +247,8 @@ public sealed class MainForm : Form
         // Slot-Ausbau abgeschlossen: Live-Hof-Instanzen dürfen wieder vorbereitet werden.
         // WICHTIG: AssetInstaller überschreibt weiterhin KEINE vorhandenen DepotSlot-.sco/.o3d.
         // In die Map kommen ausschließlich zusätzliche ROGIS_RT-Businstanzen.
-        var statics=StaticRuntime.Build(_cfg,mapDir,slots,depot,Log);
+        _status.Text="Bereite Live-Hof-Objekte vor …";
+        var statics=await Task.Run(()=>StaticRuntime.Build(_cfg,mapDir,slots,depot,Log));
         Log($"KI-Datei geschrieben: {ocu}");
         Log($"{statics} Live-Hof-Businstanzen vorbereitet. START-Busse verschwinden zur Ausfahrt, END-Busse erscheinen zur Rückkehr automatisch nach OMSI-Zeit.");
         Render(ai,depot,slots);

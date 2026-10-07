@@ -1,0 +1,12 @@
+ROGIS v6.4.54 – Hofplanung/Control Centre Performance + Flottenfilter
+
+- Kritischer Fix: Leere Google-Sheets-Statusfelder bedeuten nicht mehr automatisch „Im Betrieb“.
+- Bekannte ROGIS-Wagen übernehmen bei leerem Sheet-Status den kanonischen Grundstatus aus DATA.fleet.
+- Unbekannte/neue Wagen ohne Status werden nicht automatisch disponiert.
+- activeDepotFleet berücksichtigt ausschließlich regular=true und schließt Wagen 1603 hart aus.
+- Dadurch können nicht ausgelieferte/historische Wagen die Hofkapazität nicht mehr künstlich aufblasen.
+- DepotSlot-Sync schreibt bis zu 80 D1-Upserts pro Batch statt jeden Slot einzeln; bei ~401 Slots deutlich schneller.
+- Control Centre führt Map-Scan, Asset-Check und Runtime-Schreiben außerhalb des UI-Threads aus.
+- Statuszeile zeigt während langer Schritte, was gerade passiert; Fenster bleibt reaktionsfähig.
+- Logs zeigen Slottypen sowie Anzahl Wagen/zugeordnete Startstellplätze.
+- Vorhandene DepotSlot-.sco/.o3d bleiben weiterhin unangetastet.
