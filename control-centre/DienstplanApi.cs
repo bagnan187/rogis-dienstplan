@@ -40,7 +40,7 @@ public sealed class DienstplanApi : IDisposable
     async Task<HttpResponseMessage> SyncSlotsAttemptAsync(IReadOnlyList<DepotSlot> slots, DateTime? date)
     {
         _cfg.EnsureDepotCredentials();
-        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre v6.4.59", date = date?.ToString("yyyy-MM-dd"), slots });
+        var body = JsonSerializer.Serialize(new { source = "ROGIS Control Centre v6.4.60", date = date?.ToString("yyyy-MM-dd"), slots });
         // Client-ID absichtlich doppelt übertragen: Header + Query-Fallback.
         // Einige Proxies/Cloudflare-Konfigurationen können unbekannte X-Header entfernen.
         var clientId = Uri.EscapeDataString(_cfg.DepotClientId);
