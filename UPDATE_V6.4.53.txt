@@ -1,0 +1,11 @@
+ROGIS Control Centre v6.4.53 – Live-Hof nach abgeschlossenem Slot-Ausbau aktiviert
+
+- „Live-Hof + KI vorbereiten“ ist wieder aktiv.
+- Die fertig platzierten DepotSlots werden nur gelesen und synchronisiert.
+- Vorhandene DepotSlot-.sco/.o3d werden weiterhin NICHT überschrieben.
+- Das Control Centre schreibt ausschließlich zusätzliche ROGIS_RT-Businstanzen in die betroffenen .map-Dateien.
+- START-Instanzen sind vor der Ausfahrt sichtbar und verschwinden automatisch zur geplanten Ausfahrzeit.
+- END-Instanzen sind zunächst unsichtbar und erscheinen automatisch ab der geplanten Rückkehrzeit.
+- IDLE-Fahrzeuge bleiben auf ihrem Hofstellplatz sichtbar.
+- Kein OMSI-Neustart nötig für diese Sichtbarkeitswechsel, sofern die Live-Hof-Vorbereitung vor dem Laden der betroffenen Kacheln erfolgt ist.
+- Beim erneuten Vorbereiten werden alte ROGIS_RT-Blöcke zuerst entfernt und danach sauber neu geschrieben.
