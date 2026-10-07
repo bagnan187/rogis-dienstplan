@@ -1,0 +1,11 @@
+ROGIS v6.4.57 – Hofplanung vollständig + Control Centre schneller
+
+- Vollständige Hofplanung bricht nicht mehr ab, nur weil der fahrplanmäßige Rückkehrhof zum Rückkehrzeitpunkt voll ist.
+- In diesem Fall wird ein kompatibler freier Stellplatz in einem anderen ROGIS-Betriebshof gesucht.
+- Nach erfolgreicher Vollplanung werden depotPreview-Flags auf Plan- und Tagesebene gelöscht.
+- Slot-Sync-Antwort planningWarning wird im Control Centre sichtbar geloggt.
+- Control Centre wartet beim Anzeigen des Fensters nicht mehr auf den initialen Serverstatus.
+- KI- und Depotstatus werden beim manuellen Statusrefresh parallel geladen.
+- HTTP-Timeout von 30 auf 12 Sekunden reduziert, damit ein Cloudflare-/Backendproblem nicht wie endloses Laden wirkt.
+- FPS-Fix aus v6.4.56 bleibt aktiv: alte ROGIS_RT-Busobjekte werden entfernt, keine hunderten statischen Vollbusse werden mehr vorgeladen.
+- DepotSlot-.sco/.o3d werden weiterhin nicht überschrieben.

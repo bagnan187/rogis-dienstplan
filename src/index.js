@@ -386,7 +386,21 @@ async function assignDepotSlotsToPlan(plan,env){
        ret=fixed;
      }else if(startObj&&startObj.depot===endDepot&&slotFitsVehicle(startObj,v)&&intervalFree(res,startObj.id,arrive,H,vn))ret=startObj;
      if(!ret)ret=pickSlot(slots,endDepot,v,res,arrive,H,date+"|"+vn+"|return",vn);
-     if(!ret)throw new Error(`Kein freier Rückgabestellplatz in ${endDepot} für KOM ${vn} ab ${minToTime(arrive)}.`);
+     // Wenn der fahrplanmäßige Zielhof zu diesem Zeitpunkt voll ist, darf der Wagen
+     // auf einen anderen ROGIS-Hof ausweichen. Damit scheitert nicht die komplette
+     // Wochen-Hofplanung nur an einem einzigen zeitweise vollen Betriebshof.
+     if(!ret){
+       const fallbackDepots=["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"].filter(x=>x!==endDepot);
+       for(const depot of fallbackDepots){
+         ret=pickSlot(slots,depot,v,res,arrive,H,date+"|"+vn+"|return-fallback|"+depot,vn);
+         if(ret)break;
+       }
+     }
+     if(!ret){
+       const usable=slots.filter(x=>slotFitsVehicle(x,v)).length;
+       const freeNow=slots.filter(x=>slotFitsVehicle(x,v)&&intervalFree(res,x.id,arrive,H,vn)).length;
+       throw new Error(`Kein freier passender Rückgabestellplatz für KOM ${vn} ab ${minToTime(arrive)}. Wunschhof: ${endDepot}; kompatible Slots gesamt: ${usable}; zu diesem Zeitpunkt frei: ${freeNow}.`);
+     }
      reserveInterval(res,ret.id,arrive,H,vn,"end");
      state.set(vn,ret.id);
      byVehicle[vn]={vehicleNumber:vn,used:true,startDepot:startObj.depot,startSlot:startObj.id,endDepot:ret.depot,endSlot:ret.id,returnSlot:ret.id,pulloutMin:depart,pullinMin:arrive,slotType:ret.type,
@@ -409,8 +423,10 @@ async function assignDepotSlotsToPlan(plan,env){
      const vn=String(seg.vehicle||"").match(/\d+/)?.[0],a=vn?byVehicle[vn]:null;if(a){seg.startSlot=a.startSlot;seg.returnSlot=a.endSlot}
    }
    day.depotSlots=byVehicle;
+   day.depotPreview=false;
    day.vehicleSlotState=Object.fromEntries([...state.entries()].map(([vehicleNumber,slotId])=>[vehicleNumber,{vehicleNumber,slotId,depot:byId.get(slotId)?.depot||""}]));
  }
+ plan.depotPreview=false;
  return plan;
 }
 async function persistDepotPlanState(env,plan,now=new Date().toISOString()){
@@ -1020,7 +1036,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.55",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.57",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);

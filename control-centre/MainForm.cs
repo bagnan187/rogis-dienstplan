@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.56";
+        Text="ROGIS Control Centre v6.4.57";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -53,7 +53,7 @@ public sealed class MainForm : Form
             _lastLiveAiSignature=null;
             if(_liveAi.Checked)await LiveAiTickAsync(true);
         };
-        Shown+=async(_,__)=>{StartPluginListener();await StartupRefreshAsync();StartLiveAiSync();};
+        Shown+=(_,__)=>{StartPluginListener();StartLiveAiSync();_=StartupRefreshAsync();};
         FormClosed+=(_,__)=>{try{_liveAiTimer.Stop();_udpCts?.Cancel();_udp?.Dispose();}catch{}};
     }
 
@@ -206,9 +206,10 @@ public sealed class MainForm : Form
         SaveConfig();
         using var api=new DienstplanApi(_cfg);
         var date=_date.Value.Date;
-        var ai=await api.GetAiDayAsync(date);
-        var depot=await api.GetDepotDayAsync(date);
-        Render(ai,depot,null);
+        var aiTask=api.GetAiDayAsync(date);
+        var depotTask=api.GetDepotDayAsync(date);
+        await Task.WhenAll(aiTask,depotTask);
+        Render(await aiTask,await depotTask,null);
     }
 
     async Task SyncAndWriteAsync()
@@ -226,6 +227,8 @@ public sealed class MainForm : Form
         var sync=await api.SyncSlotsAsync(slots,date);
         var localTypes=slots.GroupBy(x=>x.slotType).OrderBy(x=>x.Key).Select(g=>$"{g.Key}: {g.Count()}");
         Log($"{sync.slotCount} Stellplätze an den Dienstplan synchronisiert · "+string.Join(" · ",localTypes));
+        if(!string.IsNullOrWhiteSpace(sync.planningWarning))
+            Log("HOFPLANUNG WARNUNG: "+sync.planningWarning);
 
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
@@ -233,7 +236,7 @@ public sealed class MainForm : Form
         if(!depot.depotAssignmentsFixed&&!depot.previewMode)
             throw new InvalidOperationException("Die Website hat noch keine feste Stellplatzplanung gespeichert.");
         if(depot.previewMode)
-            Log("TESTMODUS: Es sind noch nicht genug Stellplätze für die gesamte Flotte vorhanden. Die vorhandenen Zuordnungen werden trotzdem für den Live-Hof vorbereitet.");
+            Log("TESTMODUS/Teilbelegung: Die Website hat noch keine vollständige Hofzuordnung gespeichert. Falls 401 Slots erkannt wurden, bitte die HOFPLANUNG-WARNUNG direkt darüber beachten.");
         if(depot.slotConflicts is {Length:>0})
             throw new InvalidOperationException("Stellplatzkonflikt: "+string.Join(", ",depot.slotConflicts.Select(x=>x.slotId).Distinct()));
         if(depot.missingVehicleAssignments is {Length:>0})

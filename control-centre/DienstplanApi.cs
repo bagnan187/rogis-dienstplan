@@ -14,7 +14,7 @@ public sealed class DienstplanApi : IDisposable
     {
         _cfg = cfg;
         _cfg.EnsureDepotCredentials();
-        _http = new HttpClient { BaseAddress = new Uri(cfg.DienstplanBaseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(30) };
+        _http = new HttpClient { BaseAddress = new Uri(cfg.DienstplanBaseUrl.TrimEnd('/') + "/"), Timeout = TimeSpan.FromSeconds(12) };
     }
 
     public async Task<SlotSyncResult> SyncSlotsAsync(IReadOnlyList<DepotSlot> slots, DateTime? date = null)
