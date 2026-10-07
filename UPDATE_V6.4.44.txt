@@ -1,0 +1,9 @@
+ROGIS v6.4.44 – Status-/Website-Refresh ohne Worker-1102
+
+- Bestehende Wochenpläne werden in ensureWeek sofort gelesen; Zufalls-/Personal-/Fuhrpark-Automatik läuft nicht mehr bei normalen Lesezugriffen.
+- Control-Centre „Status aktualisieren“ ruft die Hofdaten jetzt read-only ab und startet keine komplette Hof-Neuplanung.
+- Die Website-Wageneinsatzansicht ist ebenfalls read-only; feste Hofplanung wird weiterhin beim expliziten Depot-Sync erzeugt.
+- Die Personalliste startet beim bloßen Öffnen/Aktualisieren keine Personalautomatik mehr. Diese bleibt im geplanten Automation-/Generierungsweg.
+- Optionale Admin-Unterbereiche werden mit Promise.allSettled geladen, damit ein einzelner Teilfehler nicht den gesamten Status auf „Aktualisierung fehlgeschlagen“ setzt.
+- Cloudflare-HTML-Fehlerseiten werden nicht mehr vollständig in die Website geschrieben; 1102 wird kompakt als Worker-Limit-Fehler angezeigt.
+- Teildienst-Unterbrechungen werden im Frontend gemäß Backend als „Dienstzeitunterbrechung“ beschriftet.
