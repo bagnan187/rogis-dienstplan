@@ -201,6 +201,7 @@ rogis_time
 {Fmt(slot.heading)}
 0
 0
+0
 ");
     }
 
