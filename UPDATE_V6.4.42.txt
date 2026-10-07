@@ -1,0 +1,10 @@
+ROGIS Backend v6.4.42 – Diensttypen und Teildienst-Regeln
+
+- Nachtdienst nur noch, wenn tatsächlich bis mindestens 02:00 Uhr in die Nacht gearbeitet wird.
+- Endet ein später Dienst vor 02:00 Uhr, bleibt er Spätdienst.
+- Tagdienst nur noch bei Dienstende spätestens 18:00 Uhr; spätere Dienste werden als Spätdienst eingeordnet.
+- Teildienst nur bei einer Dienstzeitunterbrechung von mindestens 2:30 h (150 Min.) und höchstens 4:00 h (240 Min.).
+- Unterbrechungen über 4:00 h werden nicht mehr zu einem gemeinsamen Fahrerdienst kombiniert.
+- Lange Dienste über 10 Stunden Dienstspanne benötigen zwingend eine gültige Dienstzeitunterbrechung von 2:30–4:00 h.
+- Die lange Unterbrechung heißt in der Anzeige "Dienstzeitunterbrechung", nicht "Pause".
+- Bestehende Pläne werden bei der Anzeige sofort nach den neuen Diensttyp-Regeln klassifiziert; für die neue Generierungsregel ist eine Neugenerierung erforderlich.
