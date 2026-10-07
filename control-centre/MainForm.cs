@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.57";
+        Text="ROGIS Control Centre v6.4.58";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -79,7 +79,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(Button("Einstellungen speichern",(_,__)=>SaveConfig()));
         buttons.Controls.Add(Button("Status aktualisieren",async(_,__)=>await Safe(RefreshOnlyAsync)));
         buttons.Controls.Add(_liveAi);
-        buttons.Controls.Add(Button("KI + Hof-Sync (FPS-schonend)",async(_,__)=>await Safe(SyncAndWriteAsync)));
+        buttons.Controls.Add(Button("KI + Hofbelegung schreiben",async(_,__)=>await Safe(SyncAndWriteAsync)));
         buttons.Controls.Add(Button("Synchronisieren + openOMSI starten",async(_,__)=>await Safe(LaunchAsync)));
         cfgGrid.Controls.Add(buttons,0,3);cfgGrid.SetColumnSpan(buttons,4);
         cfgBox.Controls.Add(cfgGrid);
@@ -227,8 +227,10 @@ public sealed class MainForm : Form
         var sync=await api.SyncSlotsAsync(slots,date);
         var localTypes=slots.GroupBy(x=>x.slotType).OrderBy(x=>x.Key).Select(g=>$"{g.Key}: {g.Count()}");
         Log($"{sync.slotCount} Stellplätze an den Dienstplan synchronisiert · "+string.Join(" · ",localTypes));
-        if(!string.IsNullOrWhiteSpace(sync.planningWarning))
-            Log("HOFPLANUNG WARNUNG: "+sync.planningWarning);
+
+        _status.Text="Plane Hofbelegung für "+date.ToString("dd.MM.yyyy")+" …";
+        var planned=await api.PlanDepotDayAsync(date);
+        Log(planned.message??$"Hofplanung gespeichert: {planned.assignedVehicles}/{planned.activeVehicles} Wagen.");
 
         var depot=await api.GetDepotDayAsync(date);
         var ai=await api.GetAiDayAsync(date);
@@ -248,16 +250,13 @@ public sealed class MainForm : Form
         _lastLiveAiSignature=AiSignature(ai);
         _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
 
-        // FPS-Fix: keine vollständigen Busmodelle mehr als statische Map-Objekte vorladen.
-        // Vorhandene ROGIS_RT-Blöcke aus älteren Versionen werden einmalig entfernt.
-        // DepotSlot-Objekte (.sco/.o3d) und alle anderen Map-Inhalte bleiben unangetastet.
-        _status.Text="Entferne alte ROGIS-Live-Hof-Objekte …";
-        var removed=await Task.Run(()=>StaticRuntime.CleanupOnly(mapDir));
+        // Gewünschtes klassisches Verhalten: Busse wieder als ROGIS_RT-Objekte in die
+        // Map-Tiles schreiben. DepotSlot-.sco/.o3d bleiben dabei weiterhin unangetastet.
+        _status.Text="Schreibe Static-Busse in die Hof-Tiles …";
+        var statics=await Task.Run(()=>StaticRuntime.Build(_cfg,mapDir,slots,depot,Log));
         Log($"KI-Datei geschrieben: {ocu}");
-        Log(removed>0
-            ? $"FPS-Fix: {removed} alte ROGIS_RT-Businstanz(en) aus den Map-Tiles entfernt. Es werden keine neuen statischen Busmodelle mehr vorgeladen."
-            : "FPS-Fix aktiv: keine ROGIS_RT-Businstanzen in den Map-Tiles vorhanden.");
-        Log("Hof-Slots bleiben vollständig erhalten; vorhandene DepotSlot-.sco/.o3d werden nicht überschrieben.");
+        Log($"{statics} Live-Hof-Businstanzen in die Map-Tiles geschrieben.");
+        Log("DepotSlot-.sco/.o3d wurden NICHT überschrieben.");
         Render(ai,depot,slots);
     }
 
@@ -276,7 +275,7 @@ public sealed class MainForm : Form
         if(string.IsNullOrWhiteSpace(exe)||!File.Exists(exe))
             throw new FileNotFoundException("openOMSI.exe nicht gefunden. Bitte in den Einstellungen eintragen.",exe);
         Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});
-        Log("openOMSI gestartet. KI und Hof-Slot-Zuordnung sind synchronisiert; schwere statische Live-Hof-Busobjekte bleiben deaktiviert, damit der Betriebshof nicht die FPS einbrechen lässt.");
+        Log("openOMSI gestartet. KI, Hofzuordnung und Static-Busse sind vorbereitet.");
     }
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)

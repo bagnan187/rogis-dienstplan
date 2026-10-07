@@ -1036,7 +1036,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.57",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.58",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1054,18 +1054,13 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
-     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre v6.4.34+ koppelt automatisch neu; Backend v6.4.35 liest Bearer-Token korrekt."},401);
+     if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre koppelt automatisch neu."},401);
      let b=await req.json();try{
        const sync=await syncDepotSlotsV6425(env,b.slots,b.source||"ROGIS Control Centre");
        const requestedDate=/^\d{4}-\d{2}-\d{2}$/.test(String(b?.date||""))?String(b.date):berlinDateKey();
-       try{
-         const mk=dateKey(mondayOf(parseDateKey(requestedDate)));
-         let plan=await ensureWeek(env,mk,"openomsi-depot-sync",false);
-         plan=await ensureDepotPlanState(env,plan);
-         return json({...sync,plannedDate:requestedDate,depotAssignmentsFixed:Object.keys(plan?.days?.[requestedDate]?.depotSlots||{}).length>0});
-       }catch(planErr){
-         return json({...sync,plannedDate:requestedDate,planningWarning:planErr?.message||String(planErr)});
-       }
+       // Absichtlich KEINE Hofplanung hier: bei 400+ Slots darf der Slot-Sync nur speichern
+       // und sofort antworten. Die eigentliche Tagesplanung läuft im separaten Endpoint.
+       return json({...sync,plannedDate:requestedDate,planningDeferred:true});
      }catch(e){return json({error:e?.message||String(e)},400)}
    }
    if(req.method==="GET"){
@@ -1073,6 +1068,33 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
      const slots=await loadDepotSlots(env);return json({ok:true,slotCount:slots.length,slots});
    }
    return json({error:"Methode nicht erlaubt."},405);
+ }
+ if(p==="/api/openomsi/depot-plan-day"&&req.method==="POST"){
+   if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden."},401);
+   let b=await req.json(),date=String(b?.date||"");
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);
+   try{
+     const mk=dateKey(mondayOf(parseDateKey(date)));
+     const row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+     if(!row)return json({error:"Für diese Woche existiert kein aktiver Dienstplan."},400);
+     let plan=JSON.parse(row.plan_json);
+     if(!plan?.days?.[date])return json({error:"Der ausgewählte Tag ist im aktiven Dienstplan nicht vorhanden."},400);
+     const slots=await loadDepotSlots(env),fleet=await activeDepotFleet(env);
+     if(!slots.length)return json({error:"Keine synchronisierten Depot-Slots vorhanden."},400);
+     if(slots.length<fleet.length)return json({error:`Zu wenige Slots für eine vollständige Hofbelegung: ${slots.length} Slots für ${fleet.length} aktive Wagen.`},400);
+
+     // Nur den angeforderten Betriebstag planen. Dadurch bleibt der Request klein genug
+     // für Cloudflare und die restlichen sechs Tage werden nicht neu berechnet.
+     const temp={...plan,days:{[date]:JSON.parse(JSON.stringify(plan.days[date]))}};
+     await assignDepotSlotsToPlan(temp,env);
+     plan.days[date]=temp.days[date];
+     const body=JSON.stringify(plan),now=new Date().toISOString();
+     await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+     await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+     await persistDepotPlanState(env,temp,now);
+     const assigned=Object.keys(plan.days[date]?.depotSlots||{}).length;
+     return json({ok:true,date,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:assigned,previewMode:false,message:`Hofbelegung für ${date} gespeichert: ${assigned} von ${fleet.length} aktiven Wagen haben einen Stellplatz.`});
+   }catch(e){return json({error:"Tages-Hofplanung fehlgeschlagen: "+(e?.message||String(e))},400)}
  }
  if(p==="/api/openomsi/depot-day"&&req.method==="GET"){
    let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);

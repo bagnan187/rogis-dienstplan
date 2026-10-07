@@ -8,3 +8,5 @@ public sealed record SlotConflict(string slotId,SlotReservation? a,SlotReservati
 public sealed record DepotVehicle(string? vehicle,int? vehicleNumber,string? model,bool used,string[]? runs,string? startDepot,string? startSlot,string? endDepot,string? endSlot,string? slotType,string? startTime,string? endTime);
 public sealed record DepotDay(bool ok,string date,int planVersion,bool depotAssignmentsFixed,bool previewMode,int[]? missingVehicleAssignments,int slotCount,Dictionary<string,object>? depotOccupancy,Dictionary<string,SlotReservation[]>? slotReservations,SlotConflict[]? slotConflicts,DepotVehicle[] vehicles);
 public sealed record SlotSyncResult(bool ok,int slotCount,string? syncedAt,string? source,string? planningWarning);
+
+public sealed record DepotPlanResult(bool ok,string? date,int planVersion,int slotCount,int activeVehicles,int assignedVehicles,bool previewMode,string? message);

@@ -69,6 +69,26 @@ public sealed class DienstplanApi : IDisposable
         return JsonSerializer.Deserialize<T>(text,_json) ?? throw new InvalidOperationException($"Ungültige {label}-Antwort.");
     }
 
+    public async Task<DepotPlanResult> PlanDepotDayAsync(DateTime date)
+    {
+        _cfg.EnsureDepotCredentials();
+        var body=JsonSerializer.Serialize(new { date=date.ToString("yyyy-MM-dd") });
+        var clientId=Uri.EscapeDataString(_cfg.DepotClientId);
+        using var req=new HttpRequestMessage(HttpMethod.Post,$"api/openomsi/depot-plan-day?clientId={clientId}");
+        req.Headers.Authorization=new AuthenticationHeaderValue("Bearer",_cfg.DepotSyncToken);
+        req.Headers.TryAddWithoutValidation("X-ROGIS-Depot-Client",_cfg.DepotClientId);
+        req.Content=new StringContent(body,Encoding.UTF8,"application/json");
+        using var res=await _http.SendAsync(req);
+        var text=await res.Content.ReadAsStringAsync();
+        if(!res.IsSuccessStatusCode)
+        {
+            var detail=text;
+            try{using var doc=JsonDocument.Parse(text);if(doc.RootElement.TryGetProperty("error",out var e))detail=e.GetString()??text;}catch{}
+            throw new InvalidOperationException($"Hofplanung HTTP {(int)res.StatusCode}: {detail}");
+        }
+        return JsonSerializer.Deserialize<DepotPlanResult>(text,_json)??throw new InvalidOperationException("Ungültige Hofplanungs-Antwort.");
+    }
+
     public Task<DepotDay> GetDepotDayAsync(DateTime date) =>
         GetJsonAsync<DepotDay>($"api/openomsi/depot-day?date={date:yyyy-MM-dd}","Depot");
 

@@ -1,0 +1,9 @@
+ROGIS v6.4.58 – Slot-Sync entkoppelt + Static-Busse wieder aktiviert
+
+- /api/openomsi/depot-slots speichert nur noch Slots und startet keine Hofplanung mehr.
+- Neuer /api/openomsi/depot-plan-day plant ausschließlich den ausgewählten Betriebstag.
+- Damit laufen 401 Slot-Sync und Hofplanung in getrennten Requests und vermeiden den bisherigen Cloudflare-1102 im kombinierten Request.
+- Control Centre führt jetzt nacheinander Slot-Sync, Tages-Hofplanung, Depot-/KI-Abruf und Static-Schreiben aus.
+- StaticRuntime.Build ist wieder aktiv: ROGIS_RT-Busse werden wie gewünscht in die Map-Tiles geschrieben.
+- Vorhandene DepotSlot-.sco/.o3d werden weiterhin niemals überschrieben.
+- Die komplette Woche wird bei diesem Control-Centre-Vorgang nicht neu geplant; nur der gewählte Tag.
