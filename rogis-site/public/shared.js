@@ -2,10 +2,13 @@ export const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(
 const baseData=await fetch('/data.json').then(r=>r.json());
 async function loadLineData(){
   try{
-    const r=await fetch('/lines.json.gz',{cache:'no-cache'});
+    const r=await fetch('/lines.gz.b64',{cache:'no-cache'});
     if(!r.ok)throw new Error('Liniennetz nicht erreichbar');
     if(typeof DecompressionStream==='undefined')throw new Error('Browser unterstützt komprimierte Netzdaten nicht');
-    const stream=r.body.pipeThrough(new DecompressionStream('gzip'));
+    const b64=(await r.text()).trim();
+    const raw=atob(b64),bytes=new Uint8Array(raw.length);
+    for(let i=0;i<raw.length;i++)bytes[i]=raw.charCodeAt(i);
+    const stream=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
     return JSON.parse(await new Response(stream).text());
   }catch(e){
     console.warn('ROGIS Liniennetz: Fallback aktiv',e);
