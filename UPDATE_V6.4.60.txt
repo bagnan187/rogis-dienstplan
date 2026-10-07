@@ -1,0 +1,11 @@
+ROGIS v6.4.60 – Dynamischer Live-Hof + Cloudflare-1102-Fix
+
+- Dynamischer Live-Hof bleibt wieder der Standard im Control Centre.
+- Für eingesetzte Fahrzeuge werden START- und END-Instanzen vor dem Kartenstart in die richtigen Hof-Tiles geschrieben.
+- START ist bis zur Ausfahrt sichtbar, END ab der Rückkehr; nicht eingesetzte Fahrzeuge bleiben als IDLE sichtbar.
+- Die Sichtbarkeit wird während der laufenden openOMSI-Session anhand OMSI-Datum/-Uhrzeit geschaltet; dafür ist kein Karten-Neuladen nötig, wenn die Live-Hof-Vorbereitung vor dem Laden der betreffenden Kachel erfolgt.
+- DepotSlot-.sco/.o3d werden weiterhin nicht überschrieben.
+- Cloudflare-1102-Fix: Tagessegmente werden nur einmal indexiert statt für jeden Umlauf erneut komplett durchsucht.
+- DepotSlots und aktiver Fuhrpark werden für die Tages-Hofplanung nur einmal geladen und wiederverwendet.
+- Große Plan-Updates werden in einem D1-Batch geschrieben.
+- Mitarbeiter-Hydration wird für Depot-Slot-Sync und Tages-Hofplanung übersprungen, weil sie dort nicht benötigt wird.
