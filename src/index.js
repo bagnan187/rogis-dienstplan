@@ -682,7 +682,7 @@ async function resolveEmployeeForSession(env,employeeId){
  return emp;
 }
 async function sessionUser(req,env){let tok=cookieToken(req);if(!tok)return null;let s=await env.DB.prepare(`SELECT username,expires_at FROM sessions WHERE token=?`).bind(tok).first();if(!s||new Date(s.expires_at)<new Date())return null;let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(s.username).first();if(!u)return null;let emp=await resolveEmployeeForSession(env,u.employee_id);if(!emp||employeeLifecycleStatus(emp,new Date())!=="active")return null;return{...u,emp}}
-async function getOrCreateUser(username,env){let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first();if(u)return u;let emp=EMP_BY_USER.get(username);if(!emp)return null;let existing=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(emp.id).first();if(existing)return null;let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),role=ADMIN_NAMES.has(emp.name)?"admin":"user",now=new Date().toISOString();await env.DB.prepare(`INSERT INTO users(username,employee_id,role,password_hash,salt,must_change,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)`).bind(username,emp.id,role,ph,salt,now,now).run();return await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}
+async function getOrCreateUser(username,env){let u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first();if(u)return u;let emp=EMP_BY_USER.get(username);if(!emp){try{await hydrateEmployees(env,true)}catch{}emp=EMP_BY_USER.get(username)}if(!emp)return null;let existing=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(emp.id).first();if(existing)return null;let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),role=ADMIN_NAMES.has(emp.name)?"admin":"user",now=new Date().toISOString();await env.DB.prepare(`INSERT INTO users(username,employee_id,role,password_hash,salt,must_change,created_at,updated_at) VALUES(?,?,?,?,?,1,?,?)`).bind(username,emp.id,role,ph,salt,now,now).run();return await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}
 function validTime(v){return /^\d{2}:\d{2}$/.test(String(v||""))}
 function optionalNum(raw,key,min,max){if(raw?.[key]===null||raw?.[key]===undefined||raw?.[key]==="")return undefined;let n=Number(raw[key]);return Number.isFinite(n)?Math.max(min,Math.min(max,Math.round(n))):undefined}
 function cleanDayWindow(x={}){let out={};for(const k of ["earliestDutyStart","latestDutyStart","latestDutyEnd"])if(validTime(x?.[k]))out[k]=String(x[k]);return out}
@@ -915,6 +915,56 @@ async function regenerateSingleDay(env,mondayKey,dateKeyValue,by="system"){if(!/
 function applyOverride(base,ov){if(!ov)return base;let kind=ov.kind||"Individueller Dienst",status=kind,dutyType=ov.duty_type||kind,depot=ov.depot||"",serviceTime=(ov.start_time&&ov.end_time)?`${ov.start_time}-${ov.end_time}`:"";if(kind==="Urlaub")return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Krank")return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Frei")return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Reserve")return{status:"Reserve",dutyType:dutyType||"Reserve",depot:depot||"Betriebshof Mitte",serviceTime:serviceTime||"06:00-13:00",segments:[],manual:true,note:ov.note||""};if(kind==="Organisation")return{status:"Organisation",dutyType:dutyType||"Betriebsleitung / Organisation",depot:depot||"Betriebshof Mitte",serviceTime:serviceTime||"08:00-16:00",segments:[],manual:true,note:ov.note||""};if(kind==="Fahrdienst")return{status:"Fahrdienst",dutyType:dutyType||"Fahrdienst",depot,serviceTime,segments:[],manual:true,note:ov.note||""};return{status:"Arbeit",dutyType:dutyType||"Individueller Dienst",depot,serviceTime,segments:[],manual:true,note:ov.note||""}}
 async function overrideMap(env,startDate,endDate,employeeId=null){let sql=`SELECT * FROM duty_overrides WHERE duty_date>=? AND duty_date<=?`,args=[startDate,endDate];if(employeeId){sql+=` AND employee_id=?`;args.push(employeeId)}let r=await env.DB.prepare(sql).bind(...args).all(),m=new Map();for(const x of r.results||[]){if(x.kind==="Frei"){let e=EMP_BY_ID.get(x.employee_id);if(!e||!isAnnualFreeDay(e,parseDateKey(x.duty_date)))continue}m.set(`${x.employee_id}|${x.duty_date}`,x)}return m}
 async function userWeek(plan,emp,env){let days=[],start=plan.monday,end=dateKey(addDays(parseDateKey(plan.monday),6)),ovs=await overrideMap(env,start,end,emp.id);for(let i=0;i<7;i++){let d=addDays(parseDateKey(plan.monday),i),key=dateKey(d),st=statusForEmployee(emp,d,plan.days[key],planCfgForEmployee(plan,emp.id,d)),ov=ovs.get(`${emp.id}|${key}`);days.push({date:key,...normalizeStopNames(applyOverride(st,ov))})}return{monday:plan.monday,version:plan.version,generatedAt:plan.generatedAt,days}}
+function parseJsonCell(v,fallback){if(v===null||v===undefined||v==="")return fallback;if(typeof v!=="string")return v;try{return JSON.parse(v)}catch{return fallback}}
+function liteStatusForEmployee(emp,d,segs,cfg=DEFAULT_GENERATION_SETTINGS){
+ let ls=employeeLifecycleStatus(emp,d);
+ if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};
+ if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};
+ segs=[...(segs||[])].sort((a,b)=>a.start-b.start);
+ let day={assignments:{[emp.id]:segs}},ay=apprenticeshipYearForDate(emp,d);
+ if(isAnnualFreeDay(emp,d)&&!segs.length)return{status:"Frei",dutyType:`Frei · Jahreskontingent ${ANNUAL_FREE_DAYS} Tage`,depot:"",serviceTime:"",segments:[]};
+ if((ay===1||ay===2)&&segs.length&&segs.every(x=>x.trainingRide)){
+   let st=segs[0].start,en=Math.max(...segs.map(x=>x.end)),mentor=segs[0].mentorName||"Busfahrer",depot=depotFrom(emp,segs);
+   let duty=ay===1?"1. Lehrjahr · Bereichsrotation Fahrdienst / Mitfahrt":"2. Lehrjahr · Begleitfahrt Klasse D";
+   let eventType=ay===1?"Mitfahrt / Linienbetrieb":"Mitfahrt / Fahrausbildung";
+   let intro=ay===1?"Bereichsrotation Fahrdienst bei "+mentor:"Vereinzelte Klasse-D-Praxisbegleitung bei "+mentor;
+   let decor=segs.map((x,i)=>({...x,startTime:minToTime(x.start),endTime:minToTime(x.end),dutyType:duty,depot,events:[...(i===0?[{type:"Ausbildungsbeginn",time:minToTime(Math.max(0,x.start-10)),location:depot,note:intro}]:[]),{type:eventType,time:minToTime(x.start)+"-"+minToTime(x.end),location:x.startLoc,note:"Umlauf "+x.run+" · "+x.vehicle+" · Begleitperson "+mentor},...(i===segs.length-1?[{type:"Ausbildungsende",time:minToTime(x.end),location:x.endLoc}]:[])]}));
+   return{status:"Ausbildung",dutyType:duty,depot,serviceTime:minToTime(st)+"-"+minToTime(en),segments:decor};
+ }
+ if(ay===1){let rot=firstYearRotation(emp,d);return{status:"Ausbildung",dutyType:"1. Lehrjahr · "+rot,depot:rot.includes("Fahrschule")||rot.includes("Fahrdienst")?"Betriebshof Mitte":emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
+ if(ay===2&&!segs.length){let ts=apprenticeTrainingState(emp,d);if(ts.phase==="MPU / Eignungsuntersuchung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · MPU / Eignungsuntersuchung",depot:"Betriebshof Mitte",serviceTime:"08:00-12:00",segments:[]};if(ts.phase==="Klasse D · Theorie / Schulungen")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Theorie / Schulungen",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};if(ts.phase==="Klasse D · Prüfung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Prüfung",depot:"Betriebshof Mitte",serviceTime:"08:00-14:00",segments:[]};if(ts.phase==="Klasse D · Praxis / Begleitfahrten")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Praxis / Fahrschule",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D bestanden / Fahrdienstreserve",depot:emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
+ if(segs.length){
+   let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end));
+   let decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));if(x.trainingPassengerNotes?.length)x.remarks=x.trainingPassengerNotes.join(" · ");else if(x.trainingPassengers?.length)x.remarks=x.trainingPassengers.map(n=>n+" fährt als Azubi mit.").join(" · ");x.events=eventize(x,i===0,i===segs.length-1,depot);return x});
+   return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor};
+ }
+ let h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));
+ if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){let rp=reserveProposal(emp,d,day,cfg);if(rp)return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};return{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
+ if(emp.name==="Robert Edward Davis")return{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};
+ if(ay===3){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}
+ if(emp.bereich==="Fahrdienst"){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",rp=reserveProposal(emp,d,day,cfg);if(rp)return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};if(h%100<15)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}
+ let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";
+ if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];
+ return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]};
+}
+async function userWeekLite(env,mondayKey,emp){
+ const monday=parseDateKey(mondayKey),dates=Array.from({length:7},(_,i)=>dateKey(addDays(monday,i)));
+ const empPath=`$."employeeSettings"."${emp.id}"`;
+ const dayPaths=dates.map(d=>`$."days"."${d}"."assignments"."${emp.id}"`);
+ const cols=dayPaths.map((_,i)=>`json_extract(plan_json,?) AS d${i}`).join(",");
+ const row=await env.DB.prepare(`SELECT version,generated_at,json_extract(plan_json,'$.seed') seed,json_extract(plan_json,?) employee_settings,${cols} FROM week_plans WHERE monday=?`).bind(empPath,...dayPaths,mondayKey).first();
+ if(!row)return null;
+ const employeeSettings=parseJsonCell(row.employee_settings,{});
+ const meta={seed:String(row.seed||""),employeeSettings:{[emp.id]:employeeSettings}};
+ const ovs=await overrideMap(env,dates[0],dates[6],emp.id),days=[];
+ for(let i=0;i<7;i++){
+   const d=addDays(monday,i),key=dates[i],segs=parseJsonCell(row["d"+i],[]);
+   const cfg=planCfgForEmployee(meta,emp.id,d),base=liteStatusForEmployee(emp,d,segs,cfg),ov=ovs.get(`${emp.id}|${key}`);
+   days.push({date:key,...normalizeStopNames(applyOverride(base,ov))});
+ }
+ return{monday:mondayKey,version:Number(row.version||0),generatedAt:row.generated_at||null,days};
+}
+
 async function dayRows(plan,date,q,env){let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=q.toLowerCase(),rows=[];for(const emp of DATA.employees){let s=normalizeStopNames(applyOverride(statusForEmployee(emp,d,plan.days[date],planCfgForEmployee(plan,emp.id,d)),ovs.get(`${emp.id}|${date}`))),summary=s.segments?.length?s.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";let row={id:emp.id,name:emp.name,dutyType:s.dutyType,status:s.status,depot:s.depot,serviceTime:s.serviceTime,summary,manual:!!s.manual,note:s.note||""};if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row)}return rows}
 async function vehicleDayRows(plan,date,q,env){
  let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=String(q||"").trim().toLowerCase();
@@ -1102,7 +1152,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.64",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.65",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1119,7 +1169,6 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Normale Lese-/Refresh-Endpunkte dürfen keine komplette Mitarbeiter-Hydration auslösen.
  // Aktuelle DB-Personaldaten werden nur dort geladen, wo sie tatsächlich benötigt werden.
  const needsEmployeeHydration=
-   p==="/api/login"||
    p==="/api/admin/personnel-list"||
    p==="/api/admin/employees"||
    p==="/api/admin/hire"||
@@ -1163,7 +1212,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  let su=await sessionUser(req,env);if(!su)return json({error:"Nicht angemeldet."},401);let emp=su.emp;
  if(p==="/api/me")return json({user:{id:emp.id,name:emp.name,username:su.username,role:su.role,position:emp.position},mustChange:!!su.must_change});
  if(p==="/api/change-password"&&req.method==="POST"){let b=await req.json(),np=String(b.newPassword||"");if(np.length<8)return json({error:"Das neue Passwort muss mindestens 8 Zeichen haben."},400);if(await pwHash(String(b.oldPassword||""),su.salt)!==su.password_hash)return json({error:"Altes Passwort ist nicht korrekt."},400);let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(np,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=0,updated_at=? WHERE username=?`).bind(ph,salt,now,su.username).run();await bumpDutyRevision(env);return json({ok:true})}
- if(p==="/api/week"){let mk=url.searchParams.get("monday")||dateKey(mondayOf(new Date())),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(await userWeek(plan,emp,env))}
+ if(p==="/api/week"){let mk=url.searchParams.get("monday")||dateKey(mondayOf(new Date())),week=await userWeekLite(env,mk,emp);if(!week)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(week,200,{"cache-control":"no-store"})}
 
  if(p==="/api/objections"&&req.method==="GET"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE employee_id=? ORDER BY created_at DESC LIMIT 50`).bind(emp.id).all();return json({items:r.results||[]})}
  if(p==="/api/objections"&&req.method==="POST"){let b=await req.json(),rd=String(b.requestedDate||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(rd))return json({error:"Bitte Datum auswählen."},400);let type=String(b.type||"Sonstiges"),requestedTime=String(b.requestedTime||"");if(type==="Urlaubswunsch"){let end=/^\d{4}-\d{2}-\d{2}$/.test(requestedTime)?requestedTime:rd,cap=await vacationCapacityForRange(env,emp.id,rd,end);if(!cap.ok)return json({error:cap.error},400);let used=await vacationDaysUsed(env,emp.id,Number(rd.slice(0,4)));if(used>=ANNUAL_VACATION_DAYS)return json({error:`Für ${rd.slice(0,4)} sind bereits alle ${ANNUAL_VACATION_DAYS} Urlaubstage verbraucht.`},400);if(!/^\d{4}-\d{2}-\d{2}$/.test(requestedTime))requestedTime=rd}let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`).bind(emp.id,emp.name,rd,type,requestedTime,String(b.message||""),now,now).run();await bumpDutyRevision(env);return json({ok:true})}
