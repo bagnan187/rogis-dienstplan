@@ -278,21 +278,29 @@ function pickSlot(slots,depot,vehicle,res,from,to,seed,ignoreVehicle=null){
  return c[0]||null;
 }
 function usageForDay(day){
- const out=new Map();
+ // Performancekritisch für Cloudflare: Segmente genau einmal indexieren statt
+ // für jeden Umlauf erneut alle Tagessegmente zu durchsuchen.
+ const out=new Map(),segmentsByRunVehicle=new Map();
+ for(const segs of Object.values(day?.assignments||{}))for(const seg of segs||[]){
+   const vn=String(seg.vehicle||"").match(/\d+/)?.[0],runKey=String(seg.run||"");
+   if(!vn||!runKey)continue;
+   const key=vn+"|"+runKey;
+   if(!segmentsByRunVehicle.has(key))segmentsByRunVehicle.set(key,[]);
+   segmentsByRunVehicle.get(key).push(seg);
+ }
  for(const [runKey,info] of Object.entries(day?.runInfo||{})){
    if(!info||info.external||info.manualVehicle||!info.vehicle?.number)continue;
    const vn=String(info.vehicle.number),u=out.get(vn)||{vehicle:info.vehicle,start:48*60,end:0,startDepot:"Betriebshof Mitte",endDepot:"Betriebshof Mitte",runs:[]};
    u.runs.push(String(runKey));
-   let touched=false;
-   for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
-     if(String(seg.vehicle||"").match(/\d+/)?.[0]!==vn||String(seg.run||"")!==String(runKey))continue;
-     touched=true;
-     u.start=Math.min(u.start,Number.isFinite(Number(seg.start))?Number(seg.start):slotClock(seg.startTime,48*60));
-     u.end=Math.max(u.end,Number.isFinite(Number(seg.end))?Number(seg.end):slotClock(seg.endTime,0));
-     u.startDepot=slotDepotName(seg.runDepot||seg.depot||seg.startLoc);
-     u.endDepot=slotDepotName(seg.endLoc||seg.runDepot||seg.depot||seg.startLoc);
-   }
-   if(!touched){
+   const matching=segmentsByRunVehicle.get(vn+"|"+String(runKey))||[];
+   if(matching.length){
+     for(const seg of matching){
+       u.start=Math.min(u.start,Number.isFinite(Number(seg.start))?Number(seg.start):slotClock(seg.startTime,48*60));
+       u.end=Math.max(u.end,Number.isFinite(Number(seg.end))?Number(seg.end):slotClock(seg.endTime,0));
+       u.startDepot=slotDepotName(seg.runDepot||seg.depot||seg.startLoc);
+       u.endDepot=slotDepotName(seg.endLoc||seg.runDepot||seg.depot||seg.startLoc);
+     }
+   }else{
      const run=info.run||{};
      u.start=Math.min(u.start,Number.isFinite(Number(run.start))?Number(run.start):slotClock(run.startTime,1));
      u.end=Math.max(u.end,Number.isFinite(Number(run.end))?Number(run.end):slotClock(run.endTime,u.start));
@@ -318,10 +326,10 @@ async function activeDepotFleet(env){
  });
  return fleet.sort((a,b)=>Number(a.number)-Number(b.number));
 }
-async function assignDepotSlotsToPlan(plan,env){
- const slots=await loadDepotSlots(env);
+async function assignDepotSlotsToPlan(plan,env,preloadedSlots=null,preloadedFleet=null){
+ const slots=preloadedSlots||await loadDepotSlots(env);
  if(!slots.length)throw new Error("Keine Depot-Slots vom OMSI-Editor vorhanden. Im Control Centre zuerst die beschrifteten Slot-Cubes synchronisieren.");
- const byId=new Map(slots.map(x=>[x.id,x])),fleet=await activeDepotFleet(env),dates=Object.keys(plan.days||{}).sort(),state=new Map(),H=48*60;
+ const byId=new Map(slots.map(x=>[x.id,x])),fleet=preloadedFleet||await activeDepotFleet(env),fleetByNumber=new Map(fleet.map(v=>[String(v.number),v])),dates=Object.keys(plan.days||{}).sort(),state=new Map(),H=48*60;
  if(!dates.length)return plan;
  const previousSlots=await latestVehicleSlotsBefore(env,dates[0]),seedOccupied=new Set();
 
@@ -376,7 +384,7 @@ async function assignDepotSlotsToPlan(plan,env){
    // Plan returns chronologically so a slot is only used when it is actually free.
    const ordered=[...uses.entries()].sort((a,b)=>(a[1].end-b[1].end)||a[0].localeCompare(b[0],"de",{numeric:true}));
    for(const [vn,u] of ordered){
-     const v=fleet.find(x=>String(x.number)===vn)||u.vehicle||{},startId=state.get(vn),startObj=byId.get(startId);
+     const v=fleetByNumber.get(vn)||u.vehicle||{},startId=state.get(vn),startObj=byId.get(startId);
      const depart=Math.max(1,Number.isFinite(u.start)?u.start:1),arrive=Math.max(depart,Number.isFinite(u.end)?u.end:depart);
      let endDepot=isECitaroGHallVehicle(v)?"Betriebshof Mitte":slotDepotName(u.endDepot||startObj?.depot),ret=null;
      if(isECitaroGHallVehicle(v)){
@@ -1036,7 +1044,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.58",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.59",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1050,7 +1058,10 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
    return json({version:Number(r?.version||0),generatedAt:r?.generated_at||null,dutyRevision:String(rev?.value||"0")},200,{"cache-control":"no-store"});
  }
  await ensureSchemaOnce(env);
- try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
+ // Slot-Sync und Tages-Hofplanung brauchen keine Mitarbeiter-Hydration. Das spart
+ // auf kalten Worker-Isolates mehrere D1-Abfragen und CPU-Zeit.
+ if(p!=="/api/openomsi/depot-slots"&&p!=="/api/openomsi/depot-plan-day")
+   try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
@@ -1086,11 +1097,13 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
      // Nur den angeforderten Betriebstag planen. Dadurch bleibt der Request klein genug
      // für Cloudflare und die restlichen sechs Tage werden nicht neu berechnet.
      const temp={...plan,days:{[date]:JSON.parse(JSON.stringify(plan.days[date]))}};
-     await assignDepotSlotsToPlan(temp,env);
+     await assignDepotSlotsToPlan(temp,env,slots,fleet);
      plan.days[date]=temp.days[date];
      const body=JSON.stringify(plan),now=new Date().toISOString();
-     await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
-     await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+     await env.DB.batch([
+       env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version),
+       env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version)
+     ]);
      await persistDepotPlanState(env,temp,now);
      const assigned=Object.keys(plan.days[date]?.depotSlots||{}).length;
      return json({ok:true,date,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:assigned,previewMode:false,message:`Hofbelegung für ${date} gespeichert: ${assigned} von ${fleet.length} aktiven Wagen haben einen Stellplatz.`});
