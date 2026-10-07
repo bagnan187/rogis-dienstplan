@@ -1,0 +1,7 @@
+ROGIS Control Centre v6.4.50 – OMSI Map-Objektformat Hotfix
+
+- StaticRuntime hat ROGIS_RT_*-Objekte mit nur zwei statt drei abschließenden 0-Zeilen geschrieben.
+- OMSI erwartet beim normalen [object]-Block drei abschließende numerische Felder.
+- Dadurch entstanden Map-Parserfehler direkt hinter ROGIS_RT_*_START/END-Objekten.
+- AddObject schreibt ab sofort den vollständigen OMSI-Objektblock.
+- Beim nächsten „KI + Hofbelegung schreiben“ entfernt CleanupRuntimeObjects die alten ROGIS_RT-Blöcke und schreibt sie im korrekten Format neu.
