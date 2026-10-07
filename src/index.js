@@ -731,6 +731,58 @@ function swapEmployeeDutyForDay(plan,emp,eid,dd,egs,seed){let key=dateKey(dd),da
 async function regenerateEmployeeInPlan(env,base,eid,by){let emp=EMP_BY_ID.get(eid);if(!emp)throw new Error("Mitarbeiter nicht gefunden.");let egs=await getEmployeeGenerationSettings(env,eid),plan=JSON.parse(JSON.stringify(base)),seed=randomToken(8),ver=await getNextPlanVersionV63(env,base.monday);plan.version=ver;plan.generatedAt=new Date().toISOString();plan.employeeSettings={...(plan.employeeSettings||{}),[eid]:egs.settings};plan.employeeSeeds={...(plan.employeeSeeds||{}),[eid]:seed};let affected=new Set([emp.name]),changedDays=0,lastReason="";for(let i=0;i<7;i++){let dd=addDays(parseDateKey(base.monday),i),r=swapEmployeeDutyForDay(plan,emp,eid,dd,egs,seed);if(r.changed){changedDays++;if(r.partner)affected.add(r.partner.name)}else if(r.reason)lastReason=r.reason}if(!changedDays&&employeeCanDriveOn(emp,parseDateKey(base.monday)))throw new Error(lastReason||"Für die gespeicherten Kriterien wurde in dieser Planversion kein tauschbarer Fahrdienst gefunden. Bitte die Woche komplett neu durchwürfeln; dann werden die individuellen Kriterien direkt bei der Generierung berücksichtigt.");return savePlanVersion(env,plan,by,"employee",`${emp.name} individuell neu generiert; ${changedDays} Tag(e) angepasst; betroffene Tauschpartner: ${[...affected].join(", ")}`,true)}
 async function regenerateEmployeeDayInPlan(env,base,eid,dateKeyValue,by){let emp=EMP_BY_ID.get(eid);if(!emp)throw new Error("Mitarbeiter nicht gefunden.");if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKeyValue))throw new Error("Ungültiges Datum.");let monday=parseDateKey(base.monday),dd=parseDateKey(dateKeyValue),diff=Math.round((dd-monday)/86400000);if(diff<0||diff>6)throw new Error("Der ausgewählte Tag liegt nicht in der angezeigten Woche.");let egs=await getEmployeeGenerationSettings(env,eid),plan=JSON.parse(JSON.stringify(base)),seed=randomToken(8),ver=await getNextPlanVersionV63(env,base.monday);plan.version=ver;plan.generatedAt=new Date().toISOString();plan.employeeSettings={...(plan.employeeSettings||{}),[eid]:egs.settings};plan.employeeSeeds={...(plan.employeeSeeds||{}),[`${eid}|${dateKeyValue}`]:seed};let r=swapEmployeeDutyForDay(plan,emp,eid,dd,egs,seed);if(!r.changed)throw new Error(r.reason||"Für diesen Mitarbeiter wurde an diesem Tag kein anderer passender Dienst gefunden.");let partnerName=r.partner?.name||"unbekannt";return savePlanVersion(env,plan,by,"employee-day",`${emp.name} nur am ${dateKeyValue} neu generiert; Tauschpartner: ${partnerName}; übrige sechs Tage unverändert`,true)}
 
+function swapDutySummary(segs=[]){
+ if(!segs.length)return"kein Fahrdienst";
+ const a=[...segs].sort((x,y)=>x.start-y.start),start=minToTime(a[0].start),end=minToTime(Math.max(...a.map(x=>x.end))),runs=[...new Set(a.map(x=>String(x.run||"")).filter(Boolean))];
+ return `${start}-${end}${runs.length?" · Umlauf "+runs.join(", "):""}`;
+}
+async function swapSpecificEmployeeDutiesForDay(env,base,eidA,eidB,dateKeyValue,by){
+ if(!eidA||!eidB||eidA===eidB)throw new Error("Bitte zwei verschiedene Personen auswählen.");
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(dateKeyValue))throw new Error("Ungültiges Datum.");
+ const empA=EMP_BY_ID.get(eidA),empB=EMP_BY_ID.get(eidB);
+ if(!empA||!empB)throw new Error("Mindestens eine ausgewählte Person wurde nicht gefunden.");
+ const monday=parseDateKey(base.monday),dd=parseDateKey(dateKeyValue),diff=Math.round((dd-monday)/86400000);
+ if(diff<0||diff>6)throw new Error("Der ausgewählte Tag liegt nicht in der angezeigten Woche.");
+ if(!employeeActiveOn(empA,dd)||!employeeActiveOn(empB,dd))throw new Error("Beide Personen müssen an diesem Datum im aktiven Beschäftigungszeitraum liegen.");
+ if(!employeeCanDriveOn(empA,dd)||!employeeCanDriveOn(empB,dd))throw new Error("Der direkte Diensttausch ist nur zwischen Personen möglich, die an diesem Tag selbst Fahrdienst fahren dürfen.");
+ if(apprenticeWeekendOff(empA,dd)||apprenticeWeekendOff(empB,dd))throw new Error("Für einen der ausgewählten Azubis ist an diesem Tag kein eigener Fahrdienst zulässig.");
+
+ const ovs=await env.DB.prepare(`SELECT employee_id,kind FROM duty_overrides WHERE duty_date=? AND employee_id IN (?,?)`).bind(dateKeyValue,eidA,eidB).all();
+ if((ovs.results||[]).length){
+   const names=(ovs.results||[]).map(x=>`${EMP_BY_ID.get(x.employee_id)?.name||x.employee_id} (${x.kind})`).join(", ");
+   throw new Error("Diensttausch nicht möglich, weil für diesen Tag eine manuelle Änderung/Abwesenheit hinterlegt ist: "+names+".");
+ }
+
+ const plan=JSON.parse(JSON.stringify(base)),day=plan.days?.[dateKeyValue];
+ if(!day)throw new Error("Der ausgewählte Tag ist in dieser Planversion nicht vorhanden.");
+ const dutyA=day.assignments?.[eidA]||[],dutyB=day.assignments?.[eidB]||[];
+ if(!dutyA.length||!dutyB.length)throw new Error("Beide Personen müssen an diesem Tag einen generierten Fahrdienst besitzen.");
+ if(dutyA.some(x=>x.trainingRide)||dutyB.some(x=>x.trainingRide)||dutyA.some(x=>x.trainingPassengers?.length)||dutyB.some(x=>x.trainingPassengers?.length))
+   throw new Error("Mindestens einer der Dienste enthält eine Azubi-Mitfahrt/Ausbildungsfahrt. Solche Dienste werden nicht direkt getauscht, damit die Ausbildungszuordnung konsistent bleibt.");
+
+ const specialA=dutyA.some(isSpecialRunSegment),specialB=dutyB.some(isSpecialRunSegment);
+ if(specialA||specialB){
+   const bothLeaders=[empA.name,empB.name].every(n=>n==="Emil Breitbau"||n==="Tim Neumann");
+   if(!bothLeaders)throw new Error("Mindestens einer der Dienste ist ein geschützter Sonder-/Fremdleistungsdienst und darf zwischen diesen Personen nicht direkt getauscht werden.");
+ }
+
+ const cfgA=planCfgForEmployee(plan,eidA,dd),cfgB=planCfgForEmployee(plan,eidB,dd);
+ if(!dutyFitsCriteria(dutyB,cfgA))throw new Error(`${empB.name}s Dienst passt nicht zu den hinterlegten Arbeitszeitkriterien von ${empA.name}.`);
+ if(!dutyFitsCriteria(dutyA,cfgB))throw new Error(`${empA.name}s Dienst passt nicht zu den hinterlegten Arbeitszeitkriterien von ${empB.name}.`);
+ if(!youthWorkWindowAllows(empA,dutyB,dd)||!youthWorkWindowAllows(empB,dutyA,dd))throw new Error("Der Tausch würde bei einer minderjährigen Person das zulässige Arbeitszeitfenster verletzen.");
+
+ const beforeA=swapDutySummary(dutyA),beforeB=swapDutySummary(dutyB);
+ day.assignments[eidA]=reassignSegments(dutyB,empA);
+ day.assignments[eidB]=reassignSegments(dutyA,empB);
+ linkDriverReliefs(day.assignments);
+
+ plan.version=await getNextPlanVersionV63(env,base.monday);
+ plan.generatedAt=new Date().toISOString();
+ plan.manualDutySwaps=[...(plan.manualDutySwaps||[]),{date:dateKeyValue,employeeA:eidA,employeeB:eidB,by,at:plan.generatedAt}];
+ await savePlanVersion(env,plan,by,"duty-swap",`Diensttausch am ${dateKeyValue}: ${empA.name} ↔ ${empB.name}; übrige Tage unverändert`,true);
+ return{plan,employeeA:empA.name,employeeB:empB.name,beforeA,beforeB,afterA:swapDutySummary(day.assignments[eidA]),afterB:swapDutySummary(day.assignments[eidB])};
+}
+
 async function nextChunkedPlanVersion(env,mk){
  let r=await env.DB.prepare(`SELECT MAX(v) v FROM (SELECT version v FROM week_plan_versions WHERE monday=? UNION ALL SELECT version v FROM week_generation_jobs WHERE monday=?)`).bind(mk,mk).first();
  let active=await env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first();
@@ -928,7 +980,7 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
 }
 
 async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.url),p=url.pathname;
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.46",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.47",time:new Date().toISOString(),checks:{savePlanVersion:typeof savePlanVersion==="function",nextEmployeeId:typeof nextEmployeeId==="function",planVersionHelper:typeof getNextPlanVersionV63==="function"}});
  try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
  if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await ensureWeek(env,mk,"openomsi-sync",false);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
@@ -1035,6 +1087,16 @@ async function route(req,env){await ensureSchemaOnce(env);let url=new URL(req.ur
  if(p==="/api/admin/employee-generation-settings"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||"");if(!EMP_BY_ID.get(eid))return json({error:"Mitarbeiter nicht gefunden."},404);if(b.action==="delete"){await env.DB.prepare(`DELETE FROM employee_generation_settings WHERE employee_id=?`).bind(eid).run();return json({ok:true,message:"Individuelle Kriterien entfernt. Für diese Person gelten nun keine persönlichen Zeit- oder Mengenlimits."})}let settings=sanitizeEmployeeGenerationSettings(b),now=new Date().toISOString();if(!Object.keys(settings).length){await env.DB.prepare(`DELETE FROM employee_generation_settings WHERE employee_id=?`).bind(eid).run();return json({ok:true,settings:{},message:"Keine persönlichen Kriterien gesetzt. Die Person kann zeitlich frei eingeplant werden."})}await env.DB.prepare(`INSERT INTO employee_generation_settings(employee_id,settings_json,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(employee_id) DO UPDATE SET settings_json=excluded.settings_json,updated_by=excluded.updated_by,updated_at=excluded.updated_at`).bind(eid,JSON.stringify(settings),su.username,now).run();return json({ok:true,settings,message:"Individuelle Kriterien gespeichert. Nur diese Person wird dadurch eingeschränkt; Mitarbeiter ohne eigene Kriterien bleiben unbegrenzt verfügbar."})}
  if(p==="/api/admin/generate-employee"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),eid=String(b.employeeId||""),baseRow=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mk).first();if(!baseRow)return json({error:"Für diese Woche existiert noch kein aktiver Plan."},400);let plan=await regenerateEmployeeInPlan(env,JSON.parse(baseRow.plan_json),eid,su.username);return json({ok:true,version:plan.version,message:`${EMP_BY_ID.get(eid)?.name||eid} neu generiert. Version ${plan.version} wurde automatisch aktiviert.`})}
  if(p==="/api/admin/generate-employee-day"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),eid=String(b.employeeId||""),date=String(b.date||""),baseRow=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mk).first();if(!baseRow)return json({error:"Für diese Woche existiert noch kein aktiver Plan."},400);try{let plan=await regenerateEmployeeDayInPlan(env,JSON.parse(baseRow.plan_json),eid,date,su.username);return json({ok:true,version:plan.version,message:`${EMP_BY_ID.get(eid)?.name||eid} wurde nur am ${date} neu generiert. Version ${plan.version} ist aktiv; die übrigen sechs Tage blieben unverändert.`})}catch(e){return json({error:e?.message||String(e)},400)}}
+ if(p==="/api/admin/swap-duty-day"&&req.method==="POST"){
+   let b=await req.json(),mk=String(b.monday||""),date=String(b.date||""),eidA=String(b.employeeA||""),eidB=String(b.employeeB||"");
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(mk))return json({error:"Ungültige Planwoche."},400);
+   let baseRow=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+   if(!baseRow)return json({error:"Für diese Woche existiert noch kein aktiver Plan."},400);
+   try{
+     const r=await swapSpecificEmployeeDutiesForDay(env,JSON.parse(baseRow.plan_json),eidA,eidB,date,su.username);
+     return json({ok:true,version:r.plan.version,employeeA:r.employeeA,employeeB:r.employeeB,beforeA:r.beforeA,beforeB:r.beforeB,afterA:r.afterA,afterB:r.afterB,message:`Diensttausch gespeichert: ${r.employeeA} und ${r.employeeB} haben am ${date} ihre Fahrdienste getauscht. Planversion ${r.plan.version} ist jetzt aktiv.`});
+   }catch(e){return json({error:e?.message||String(e)},400)}
+ }
  if(p==="/api/admin/reset-week"&&req.method==="POST")return json({error:"Diese Seite verwendet noch die alte Ein-Request-Wochengenerierung. Bitte einmal vollständig neu laden und danach „Komplette Woche verwerfen & neu erzeugen“ erneut ausführen."},409);
  if(p==="/api/admin/generate-day"&&req.method==="POST"){let b=await req.json(),mk=String(b.monday||""),date=String(b.date||"");try{let plan=await regenerateSingleDay(env,mk,date,su.username);return json({ok:true,version:plan.version,message:`${date} wurde neu generiert. Version ${plan.version} ist jetzt aktiv; die übrigen Tage der Woche blieben unverändert.`})}catch(e){return json({error:e?.message||String(e)},400)}}
  if(p==="/api/admin/generate"&&req.method==="POST")return json({error:"Diese Seite verwendet noch die alte Ein-Request-Wochengenerierung. Bitte einmal vollständig neu laden; ab v6.4.39 läuft die Woche in 7 getrennten Worker-Schritten."},409);

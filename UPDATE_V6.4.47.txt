@@ -1,0 +1,12 @@
+ROGIS v6.4.47 – manueller Diensttausch zwischen zwei Personen
+
+- Neue Admin-Karte „Diensttausch · bestimmter Tag“.
+- Datum innerhalb der aktuell angezeigten Woche auswählen.
+- Person A und Person B separat per Name/Personal-ID suchen und auswählen.
+- Vor dem Tausch zeigt die Website den aktuellen Diensttyp, Dienstzeit und Umlauf der beiden Personen.
+- Beim Bestätigen werden nur die kompletten generierten Fahrdienste dieses einen Tages getauscht.
+- Die übrigen sechs Tage bleiben unverändert.
+- Der Tausch erzeugt eine neue aktive Planversion; die vorherige Version bleibt in der Versionshistorie.
+- Urlaub, Krank, manuelle Overrides, Azubi-Mitfahrten/Ausbildungsfahrten und geschützte Sonder-/Fremdleistungsdienste werden nicht blind überschrieben.
+- Persönliche Arbeitszeitkriterien und Jugendarbeitsschutz-Zeitfenster werden vor dem Tausch geprüft.
+- Wagen- und Umlaufzuordnung bleiben erhalten; nur die beiden Fahrer wechseln.
