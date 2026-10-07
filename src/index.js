@@ -1027,6 +1027,77 @@ async function vehicleDayRows(plan,date,q,env){
  const depotAssignmentsFixed=activeVehicleNumbers.size>0&&missingActiveVehicleAssignments.length===0&&!previewMode;
  return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed,previewMode,missingVehicleAssignments:missingActiveVehicleAssignments,planVersion:Number(plan?.version||0)}
 }
+async function vehicleDayRowsLite(env,mondayKey,date,q){
+ const dayPath=`$."days"."${date}"`;
+ const row=await env.DB.prepare(`SELECT version,json_extract(plan_json,?) day_json,json_extract(plan_json,'$.depotPreview') root_preview FROM week_plans WHERE monday=?`).bind(dayPath,mondayKey).first();
+ if(!row||!row.day_json)return null;
+ const day=parseJsonCell(row.day_json,{});
+ const qq=String(q||"").trim().toLowerCase();
+ const [fleetRaw,slots,ovRows]=await Promise.all([
+   loadFleetFromDb(env),
+   loadDepotSlots(env),
+   env.DB.prepare(`SELECT employee_id FROM duty_overrides WHERE duty_date=?`).bind(date).all()
+ ]);
+ const fleet=fleetRaw.filter(v=>v.regular||String(v.status||"").trim().toLowerCase()==="im betrieb");
+ const overridden=new Set((ovRows.results||[]).map(x=>String(x.employee_id)));
+ const byVehicle=new Map();
+ for(const v of fleet){
+   const key=String(v.label||`KOM ${v.number}`);
+   byVehicle.set(key,{vehicle:key,model:v.model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]});
+ }
+ for(const [eid,segs] of Object.entries(day.assignments||{})){
+   if(overridden.has(String(eid)))continue;
+   for(const seg of segs||[]){
+     if(seg?.trainingRide||seg?.manualVehicle||!seg?.vehicle||seg.vehicle==="KOM offen"||/manuell nachtragen/i.test(String(seg.vehicle)))continue;
+     const key=String(seg.vehicle),rowV=byVehicle.get(key)||{vehicle:key,model:seg.vehicleModel||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]};
+     rowV.used=true;if(!rowV.model)rowV.model=seg.vehicleModel||"";
+     const run=String(seg.run||"").trim();if(run&&!rowV.runs.includes(run))rowV.runs.push(run);
+     const st=seg.startTime||minToTime(Number(seg.start||0)),et=seg.endTime||minToTime(Number(seg.end||0));
+     const startLoc=renameStop(seg.startLoc||""),endLoc=renameStop(seg.endLoc||"");
+     const driverName=String(seg.employeeName||EMP_BY_ID.get(String(eid))?.name||String(eid));
+     rowV.drivers.push({name:driverName,employeeId:String(seg.employeeId||eid),startTime:st,endTime:et,startLoc,endLoc,run,lines:seg.lines||[]});
+     if(!rowV.startTime||st<rowV.startTime){rowV.startTime=st;rowV.startLoc=startLoc}
+     if(!rowV.endTime||et>rowV.endTime){rowV.endTime=et;rowV.endLoc=endLoc}
+     for(const line of seg.lines||[])if(line&&!rowV.lines.includes(line))rowV.lines.push(line);
+     byVehicle.set(key,rowV);
+   }
+ }
+ const rows=[...byVehicle.values()];
+ for(const rowV of rows){
+   rowV.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));
+   const seen=new Set(),ded=[];
+   for(const x of rowV.drivers){const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))continue;seen.add(k);ded.push(x)}
+   rowV.drivers=ded;rowV.runs=[...new Set(rowV.runs)];rowV.lines=[...new Set(rowV.lines)];
+ }
+ const depotAssignments=new Map(Object.values(day.depotSlots||{}).map(a=>[String(a.vehicleNumber),a]));
+ const activeVehicleNumbers=new Set(fleet.map(v=>String(v.number)));
+ for(const rowV of rows){
+   const vn=String((String(rowV.vehicle).match(/\d+/)||[""])[0]),a=depotAssignments.get(vn);
+   if(!a)continue;
+   rowV.startDepot=a.startDepot||"";rowV.startSlot=a.startSlot||"";rowV.endDepot=a.endDepot||"";rowV.endSlot=a.endSlot||a.returnSlot||"";rowV.returnSlot=rowV.endSlot;rowV.slotType=a.slotType||"";
+   rowV.pulloutMin=Number.isFinite(Number(a.pulloutMin))?Number(a.pulloutMin):null;
+   rowV.pullinMin=Number.isFinite(Number(a.pullinMin))?Number(a.pullinMin):null;
+ }
+ const today=berlinDateKey(),nowMin=berlinMinuteOfDay();
+ for(const rowV of rows){
+   if(!rowV.startSlot&&!rowV.endSlot){rowV.locationStatus="Stellplatz noch nicht geplant";rowV.currentSlot="";rowV.currentDepot="";continue}
+   if(!rowV.used){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||"";continue}
+   if(date<today){rowV.locationStatus="Auf Hof · Tagesende";rowV.currentSlot=rowV.endSlot||rowV.startSlot||"";rowV.currentDepot=rowV.endDepot||rowV.startDepot||"";continue}
+   if(date>today){rowV.locationStatus="Auf Hof · Tagesbeginn";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||"";continue}
+   const out=Number.isFinite(rowV.pulloutMin)?rowV.pulloutMin:slotClock(rowV.startTime,0),inn=Number.isFinite(rowV.pullinMin)?rowV.pullinMin:slotClock(rowV.endTime,48*60);
+   if(nowMin<out){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||"";rowV.currentDepot=rowV.startDepot||""}
+   else if(nowMin>=inn){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.endSlot||rowV.returnSlot||"";rowV.currentDepot=rowV.endDepot||""}
+   else{rowV.locationStatus="Unterwegs";rowV.currentSlot="";rowV.currentDepot=""}
+ }
+ const filtered=rows.filter(rowV=>{if(!qq)return true;const hay=[rowV.vehicle,rowV.model,rowV.used?"im einsatz":"nicht eingesetzt",rowV.runs.join(" "),rowV.startTime,rowV.endTime,rowV.startLoc,rowV.endLoc,rowV.startSlot,rowV.endSlot,rowV.startDepot,rowV.endDepot,rowV.currentSlot,rowV.currentDepot,rowV.locationStatus,rowV.lines.join(" "),...rowV.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
+ filtered.sort((a,b)=>{const an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
+ const rr=depotReservationsForDay(day),occupancy={};
+ for(const depot of ["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"])occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slots.filter(x=>x.depot===depot).length};
+ const missing=[...activeVehicleNumbers].filter(vn=>{const a=depotAssignments.get(vn);return !a||!String(a.startSlot||"").trim()||!String(a.endSlot||a.returnSlot||"").trim()}).map(Number).filter(Boolean);
+ const previewMode=!!row.root_preview||!!day.depotPreview;
+ return{date,rows:filtered,usedVehicles:rows.filter(r=>r.used).length,activeVehicles:rows.length,notUsedVehicles:rows.filter(r=>!r.used).length,depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,previewMode,missingVehicleAssignments:missing,planVersion:Number(row.version||0)};
+}
+
 const ANNUAL_VACATION_DAYS=30;
 async function vacationDaysUsed(env,employeeId,year){let y=Number(year),start=`${y}-01-01`,end=`${y}-12-31`,r=await env.DB.prepare(`SELECT COUNT(DISTINCT duty_date) c FROM duty_overrides WHERE employee_id=? AND kind='Urlaub' AND duty_date>=? AND duty_date<=?`).bind(employeeId,start,end).first();return Number(r?.c||0)}
 function vacationDatesByYear(start,end){let out=new Map(),d=parseDateKey(start),last=parseDateKey(end),guard=0;while(d<=last&&guard<400){let k=dateKey(d),y=Number(k.slice(0,4));if(!out.has(y))out.set(y,[]);out.get(y).push(k);d=addDays(d,1);guard++}return out}
@@ -1152,7 +1223,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.65",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.66",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1231,7 +1302,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(p==="/api/admin/reset-password"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let u=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(eid).first();if(!u){let username=await createInitialUserForEmployee(e,env);u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=1,updated_at=? WHERE username=?`).bind(ph,salt,now,u.username).run();await env.DB.prepare(`DELETE FROM sessions WHERE username=?`).bind(u.username).run();return json({ok:true,username:u.username,message:`Passwort von ${e.name} wurde auf ${INIT_PASSWORD} zurückgesetzt. Beim nächsten Login muss ein neues Passwort vergeben werden.`})}
  if(p==="/api/admin/employee-week"){let mk=url.searchParams.get("monday"),eid=url.searchParams.get("employeeId"),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(await userWeek(plan,e,env))}
  if(p==="/api/admin/day"){let date=url.searchParams.get("date"),q=url.searchParams.get("q")||"",mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json({rows:await dayRows(plan,date,q,env)})}
- if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(await vehicleDayRows(plan,date,q,env))}
+ if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",mk=dateKey(mondayOf(parseDateKey(date))),result=await vehicleDayRowsLite(env,mk,date,q);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
  if(p==="/api/admin/summary"){let mk=url.searchParams.get("monday"),plan=await loadExistingWeek(env,mk),o=await env.DB.prepare(`SELECT COUNT(*) c FROM objections WHERE status='offen'`).first();let today=new Date(),active=DATA.employees.filter(e=>employeeActiveOn(e,today));return json({staff:active.length,drivers:active.filter(e=>e.bereich==="Fahrdienst").length,openObjections:o?.c||0,version:Number(plan?.version||0)})}
  if(p==="/api/admin/objections"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE status IN ('offen','info') ORDER BY CASE WHEN status='info' THEN 0 ELSE 1 END, created_at ASC LIMIT 200`).all();return json({items:r.results||[]})}
  if(p.startsWith("/api/admin/vacation-request/")&&p.endsWith("/approve")&&req.method==="POST"){
