@@ -1,0 +1,10 @@
+ROGIS Control Centre v6.4.56 – FPS-Fix Betriebshof + schnelle Slot-Zuordnung
+
+- Die Backend-Fixes aus v6.4.54/v6.4.55 bleiben enthalten: aktive Hof-Flotte wird korrekt auf die regulären ROGIS-Fahrzeuge begrenzt; Wagen 1603 bleibt ausgeschlossen.
+- Bei aktuellem Stammfuhrpark sind 323 reguläre Wagen maßgeblich; 401 aktive Slots reichen daher für eine vollständige Zuordnung.
+- DepotSlot-Sync bleibt gebatcht und UI-blockierende Arbeit läuft außerhalb des UI-Threads.
+- Kritischer FPS-Fix: Es werden KEINE vollständigen Busmodelle mehr als ROGIS_RT-Mapobjekte vorgeladen.
+- Beim nächsten Hof-Sync werden alte ROGIS_RT-Objekte aus früheren Versionen automatisch aus den .map-Dateien entfernt.
+- Nur ROGIS_RT-Blöcke werden entfernt; vorhandene DepotSlot-Objekte und alle Slot-.sco/.o3d bleiben unverändert.
+- KI/OCU-Sync und Hof-Slot-Zuordnung bleiben aktiv.
+- Ziel: kein 11-FPS-Einbruch mehr durch 100+ statische Busmodelle am Betriebshof.

@@ -30,7 +30,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.54";
+        Text="ROGIS Control Centre v6.4.56";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
@@ -79,7 +79,7 @@ public sealed class MainForm : Form
         buttons.Controls.Add(Button("Einstellungen speichern",(_,__)=>SaveConfig()));
         buttons.Controls.Add(Button("Status aktualisieren",async(_,__)=>await Safe(RefreshOnlyAsync)));
         buttons.Controls.Add(_liveAi);
-        buttons.Controls.Add(Button("Live-Hof + KI vorbereiten",async(_,__)=>await Safe(SyncAndWriteAsync)));
+        buttons.Controls.Add(Button("KI + Hof-Sync (FPS-schonend)",async(_,__)=>await Safe(SyncAndWriteAsync)));
         buttons.Controls.Add(Button("Synchronisieren + openOMSI starten",async(_,__)=>await Safe(LaunchAsync)));
         cfgGrid.Controls.Add(buttons,0,3);cfgGrid.SetColumnSpan(buttons,4);
         cfgBox.Controls.Add(cfgGrid);
@@ -244,13 +244,17 @@ public sealed class MainForm : Form
         var ocu=OcuGenerator.Write(_cfg,ai,Log);
         _lastLiveAiSignature=AiSignature(ai);
         _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
-        // Slot-Ausbau abgeschlossen: Live-Hof-Instanzen dürfen wieder vorbereitet werden.
-        // WICHTIG: AssetInstaller überschreibt weiterhin KEINE vorhandenen DepotSlot-.sco/.o3d.
-        // In die Map kommen ausschließlich zusätzliche ROGIS_RT-Businstanzen.
-        _status.Text="Bereite Live-Hof-Objekte vor …";
-        var statics=await Task.Run(()=>StaticRuntime.Build(_cfg,mapDir,slots,depot,Log));
+
+        // FPS-Fix: keine vollständigen Busmodelle mehr als statische Map-Objekte vorladen.
+        // Vorhandene ROGIS_RT-Blöcke aus älteren Versionen werden einmalig entfernt.
+        // DepotSlot-Objekte (.sco/.o3d) und alle anderen Map-Inhalte bleiben unangetastet.
+        _status.Text="Entferne alte ROGIS-Live-Hof-Objekte …";
+        var removed=await Task.Run(()=>StaticRuntime.CleanupOnly(mapDir));
         Log($"KI-Datei geschrieben: {ocu}");
-        Log($"{statics} Live-Hof-Businstanzen vorbereitet. START-Busse verschwinden zur Ausfahrt, END-Busse erscheinen zur Rückkehr automatisch nach OMSI-Zeit.");
+        Log(removed>0
+            ? $"FPS-Fix: {removed} alte ROGIS_RT-Businstanz(en) aus den Map-Tiles entfernt. Es werden keine neuen statischen Busmodelle mehr vorgeladen."
+            : "FPS-Fix aktiv: keine ROGIS_RT-Businstanzen in den Map-Tiles vorhanden.");
+        Log("Hof-Slots bleiben vollständig erhalten; vorhandene DepotSlot-.sco/.o3d werden nicht überschrieben.");
         Render(ai,depot,slots);
     }
 
@@ -269,7 +273,7 @@ public sealed class MainForm : Form
         if(string.IsNullOrWhiteSpace(exe)||!File.Exists(exe))
             throw new FileNotFoundException("openOMSI.exe nicht gefunden. Bitte in den Einstellungen eintragen.",exe);
         Process.Start(new ProcessStartInfo(exe){UseShellExecute=true,WorkingDirectory=Path.GetDirectoryName(exe)!});
-        Log("openOMSI gestartet. Live-Hof und KI sind vorbereitet; START-/END-Busse schalten ihre Sichtbarkeit während der laufenden Session automatisch nach OMSI-Zeit.");
+        Log("openOMSI gestartet. KI und Hof-Slot-Zuordnung sind synchronisiert; schwere statische Live-Hof-Busobjekte bleiben deaktiviert, damit der Betriebshof nicht die FPS einbrechen lässt.");
     }
 
     void Render(AiDay ai,DepotDay depot,IReadOnlyList<DepotSlot>? slots)

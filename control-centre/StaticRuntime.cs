@@ -209,26 +209,33 @@ rogis_time
 ");
     }
 
-    static void CleanupRuntimeObjects(string mapDir)
+    static void CleanupRuntimeObjects(string mapDir)=>CleanupOnly(mapDir);
+
+    public static int CleanupOnly(string mapDir)
     {
+        var removed=0;
         foreach(var file in Directory.EnumerateFiles(mapDir,"*.map"))
         {
-            BackupOnce(file);
             var text=OmsiText.Read(file);
             var lines=text.Replace("\r\n","\n").Replace('\r','\n').Split('\n');
             var output=new List<string>();
+            var changed=false;
             for(var i=0;i<lines.Length;)
             {
                 if(lines[i].Trim().Equals("[object]",StringComparison.OrdinalIgnoreCase)&&i+2<lines.Length&&lines[i+2].Contains(RuntimeTag,StringComparison.OrdinalIgnoreCase))
                 {
+                    removed++;changed=true;
                     i+=3;while(i<lines.Length&&!lines[i].TrimStart().StartsWith("["))i++;
                     continue;
                 }
                 output.Add(lines[i++]);
             }
+            if(!changed)continue;
+            BackupOnce(file);
             var cleaned=string.Join(Environment.NewLine,output);
-            if(!string.Equals(text,cleaned,StringComparison.Ordinal))OmsiText.WriteLikeOriginal(file,cleaned);
+            OmsiText.WriteLikeOriginal(file,cleaned);
         }
+        return removed;
     }
 
     static void AppendObjects(string mapPath,List<string> blocks)
