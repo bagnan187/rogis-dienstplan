@@ -130,7 +130,20 @@ function annualFreeDateSet(emp,year){
  }
  ANNUAL_FREE_DATE_CACHE.set(key,selected);return selected;
 }
-function isAnnualFreeDay(emp,d){return !!emp&&annualFreeDateSet(emp,d.getUTCFullYear()).has(dateKey(d))}
+function isAnnualFreeDay(emp,d){
+ if(!emp)return false;
+ const year=d.getUTCFullYear(),k=dateKey(d),ys=`${year}-01-01`,ye=`${year}-12-31`;
+ const from=emp.startDate&&emp.startDate>ys?emp.startDate:ys,to=emp.endDate&&emp.endDate<ye?emp.endDate:ye;
+ if(from>to||k<from||k>to)return false;
+ const dayNo=s=>{const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?Math.floor(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]))/86400000):0};
+ const base=dayNo(from),n=dayNo(to)-base+1,target=dayNo(k)-base,count=Math.min(ANNUAL_FREE_DAYS,n);
+ if(n<=0||target<0||target>=n||count<=0)return false;
+ let idx=hash(`${emp.id}|${year}|annual-free-start-v6438`)%n;
+ let step=1+(hash(`${emp.id}|${year}|annual-free-step-v6438`)%Math.max(1,n-1));
+ while(gcdInt(step,n)!==1)step=step%n+1;
+ for(let i=0;i<count;i++){if(idx===target)return true;idx=(idx+step)%n}
+ return false;
+}
 const DEFAULT_GENERATION_SETTINGS={targetDriveMinutes:450,longBlockThreshold:210,longBreakMinutes:45,shortBreakMinutes:30,reserveEarlyStart:"06:00",reserveEarlyEnd:"13:00",reserveLateStart:"13:00",reserveLateEnd:"21:00"};
 const UNLIMITED_EMPLOYEE_SETTINGS={_custom:false,targetDriveMinutes:450,longBlockThreshold:210,longBreakMinutes:45,shortBreakMinutes:30};
 function cfgNum(cfg,key,fallback){let n=Number(cfg?.[key]);return Number.isFinite(n)?n:fallback}
@@ -510,6 +523,7 @@ async function ensureDepotPlanState(env,plan){
    // und Control Centre sichtbar bleiben. Nicht zugeordnete Fahrzeuge bleiben explizit offen.
    await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
    await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
+   await invalidateMaterializedWeekV6469(env,plan.monday,plan.version);
    return plan;
  }
  await assignDepotSlotsToPlan(plan,env);
@@ -517,6 +531,7 @@ async function ensureDepotPlanState(env,plan){
  await env.DB.prepare(`UPDATE week_plans SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
  await env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version).run();
  await persistDepotPlanState(env,plan,now);
+ await invalidateMaterializedWeekV6469(env,plan.monday,plan.version);
  return plan;
 }
 function depotReservationsForDay(day){
@@ -970,39 +985,31 @@ async function userWeekLite(env,mondayKey,emp){
 
 async function dayRowsLite(env,mondayKey,date,q,offset=0,limit=40){
  offset=Math.max(0,Math.floor(Number(offset)||0));limit=Math.max(10,Math.min(60,Math.floor(Number(limit)||40)));
- const d=parseDateKey(date),qq=String(q||"").trim().toLowerCase();
- const assignmentsPath=`$."days"."${date}"."assignments"`;
- const meta=await env.DB.prepare(`SELECT version,json_extract(plan_json,'$.seed') seed FROM week_plans WHERE monday=?`).bind(mondayKey).first();
- if(!meta)return null;
-
+ const d=parseDateKey(date),qq=String(q||"").trim().toLowerCase(),cache=await materializePlanDayV6469(env,mondayKey,date);
+ if(!cache)return null;
  const total=DATA.employees.length,emps=DATA.employees.slice(offset,offset+limit),ids=emps.map(e=>String(e.id));
- if(!emps.length)return{rows:[],total,offset,limit,nextOffset:null,planVersion:Number(meta.version||0)};
+ if(!emps.length)return{rows:[],total,offset,limit,nextOffset:null,planVersion:cache.version};
  const ph=ids.map(()=>"?").join(",");
-
- // Nur Zuweisungen der aktuellen 40 Personen aus D1 holen; kein kompletter Tag/Plan im Worker.
  const [assignedRes,segsRes,ovRes]=await Promise.all([
-   env.DB.prepare(`SELECT a.key employee_id FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a WHERE wp.monday=?`).bind(assignmentsPath,mondayKey).all(),
-   env.DB.prepare(`SELECT a.key employee_id,a.value segs_json FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a WHERE wp.monday=? AND a.key IN (${ph})`).bind(assignmentsPath,mondayKey,...ids).all(),
+   env.DB.prepare(`SELECT DISTINCT employee_id FROM plan_day_segments WHERE monday=? AND plan_version=? AND duty_date=?`).bind(mondayKey,cache.version,date).all(),
+   env.DB.prepare(`SELECT employee_id,seq,segment_json FROM plan_day_segments WHERE monday=? AND plan_version=? AND duty_date=? AND employee_id IN (${ph}) ORDER BY employee_id,seq`).bind(mondayKey,cache.version,date,...ids).all(),
    env.DB.prepare(`SELECT * FROM duty_overrides WHERE duty_date=? AND employee_id IN (${ph})`).bind(date,...ids).all()
  ]);
- const assignedIds=new Set((assignedRes.results||[]).map(x=>String(x.employee_id)));
- const segMap=new Map((segsRes.results||[]).map(x=>[String(x.employee_id),parseJsonCell(x.segs_json,[])]));
- const ovMap=new Map((ovRes.results||[]).map(x=>[String(x.employee_id),x]));
- const fakeAssignments={};for(const id of assignedIds)fakeAssignments[id]=[{}];
- const day={assignments:fakeAssignments};
- const cfg={...DEFAULT_GENERATION_SETTINGS,_seed:String(meta.seed||"")};
- const rows=[];
+ const assignedIds=new Set((assignedRes.results||[]).map(x=>String(x.employee_id))),segMap=new Map();
+ for(const r of segsRes.results||[]){const id=String(r.employee_id);if(!segMap.has(id))segMap.set(id,[]);segMap.get(id).push(parseJsonCell(r.segment_json,{}))}
+ const ovMap=new Map((ovRes.results||[]).map(x=>[String(x.employee_id),x])),day={assignments:{}};
+ for(const id of assignedIds)day.assignments[id]=[{}];
+ const cfg={...DEFAULT_GENERATION_SETTINGS,_seed:cache.seed},rows=[];
  for(const emp of emps){
-   const segs=segMap.get(String(emp.id))||[];
-   if(segs.length)day.assignments[emp.id]=segs;else if(!assignedIds.has(String(emp.id)))delete day.assignments[emp.id];
-   const effective=normalizeStopNames(applyOverride(statusForEmployee(emp,d,day,cfg),ovMap.get(String(emp.id))));
+   const id=String(emp.id),segs=segMap.get(id)||[];
+   if(segs.length)day.assignments[id]=segs;
+   const effective=normalizeStopNames(applyOverride(statusForEmployee(emp,d,day,cfg),ovMap.get(id)));
    const summary=effective.segments?.length?effective.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";
    const row={id:emp.id,name:emp.name,dutyType:effective.dutyType,status:effective.status,depot:effective.depot,serviceTime:effective.serviceTime,summary,manual:!!effective.manual,note:effective.note||""};
    if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row);
-   if(segs.length)day.assignments[emp.id]=[{}];
+   if(segs.length)day.assignments[id]=[{}];
  }
- const nextOffset=offset+limit<total?offset+limit:null;
- return{rows,total,offset,limit,nextOffset,planVersion:Number(meta.version||0)};
+ return{rows,total,offset,limit,nextOffset:offset+limit<total?offset+limit:null,planVersion:cache.version};
 }
 
 async function dayRows(plan,date,q,env){let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=q.toLowerCase(),rows=[];for(const emp of DATA.employees){let s=normalizeStopNames(applyOverride(statusForEmployee(emp,d,plan.days[date],planCfgForEmployee(plan,emp.id,d)),ovs.get(`${emp.id}|${date}`))),summary=s.segments?.length?s.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";let row={id:emp.id,name:emp.name,dutyType:s.dutyType,status:s.status,depot:s.depot,serviceTime:s.serviceTime,summary,manual:!!s.manual,note:s.note||""};if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row)}return rows}
@@ -1069,52 +1076,25 @@ async function vehicleDayRows(plan,date,q,env){
 }
 async function vehicleDayRowsLite(env,mondayKey,date,q,offset=0,limit=60){
  offset=Math.max(0,Math.floor(Number(offset)||0));limit=Math.max(20,Math.min(80,Math.floor(Number(limit)||60)));
- const assignmentsPath=`$."days"."${date}"."assignments"`;
- const depotPath=`$."days"."${date}"."depotSlots"`;
- const dayPreviewPath=`$."days"."${date}"."depotPreview"`;
- const qq=String(q||"").trim().toLowerCase();
-
+ const qq=String(q||"").trim().toLowerCase(),cache=await materializePlanDayV6469(env,mondayKey,date);
+ if(!cache)return null;
  const fleetCount=await env.DB.prepare(`SELECT COUNT(*) c FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb'`).first();
- let total=Number(fleetCount?.c||0);
- let fleetRes=await env.DB.prepare(`SELECT number,label,model,status,regular FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb' ORDER BY number LIMIT ? OFFSET ?`).bind(limit,offset).all();
+ let total=Number(fleetCount?.c||0),fleetRes=await env.DB.prepare(`SELECT number,label,model,status,regular FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb' ORDER BY number LIMIT ? OFFSET ?`).bind(limit,offset).all();
  let fleet=(fleetRes.results||[]).map(v=>({number:Number(v.number),label:v.label||`KOM ${v.number}`,model:v.model||"",status:v.status||"",regular:!!v.regular}));
- if(!total){
-   const fallback=(DATA.fleet||[]).filter(v=>v.regular&&Number(v.number)!==1603);total=fallback.length;fleet=fallback.slice(offset,offset+limit);
- }
- if(!fleet.length)return{date,rows:[],usedVehicles:0,activeVehicles:total,notUsedVehicles:total,total,offset,limit,nextOffset:null,slotCount:0,previewMode:false,planVersion:0};
-
- const labels=fleet.map(v=>String(v.label||`KOM ${v.number}`)),numbers=fleet.map(v=>String(v.number));
- const lph=labels.map(()=>"?").join(","),nph=numbers.map(()=>"?").join(",");
- const [meta,segRes,depotRes,slotCountRes,ovRes]=await Promise.all([
-   env.DB.prepare(`SELECT version,json_extract(plan_json,'$.depotPreview') root_preview,json_extract(plan_json,?) day_preview FROM week_plans WHERE monday=?`).bind(dayPreviewPath,mondayKey).first(),
-   env.DB.prepare(`
-     SELECT a.key employee_id,json_extract(s.value,'$.employeeName') employee_name,json_extract(s.value,'$.employeeId') segment_employee_id,
-            json_extract(s.value,'$.vehicle') vehicle,json_extract(s.value,'$.vehicleModel') vehicle_model,json_extract(s.value,'$.run') run,
-            json_extract(s.value,'$.start') start_min,json_extract(s.value,'$.end') end_min,json_extract(s.value,'$.startLoc') start_loc,
-            json_extract(s.value,'$.endLoc') end_loc,json_extract(s.value,'$.lines') lines_json
-     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a,json_each(a.value) s
-     WHERE wp.monday=? AND json_extract(s.value,'$.vehicle') IN (${lph})
-       AND COALESCE(json_extract(s.value,'$.trainingRide'),0)=0 AND COALESCE(json_extract(s.value,'$.manualVehicle'),0)=0
-   `).bind(assignmentsPath,mondayKey,...labels).all(),
-   env.DB.prepare(`
-     SELECT COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) vehicle_number,json_extract(d.value,'$.used') used,
-            json_extract(d.value,'$.startDepot') start_depot,json_extract(d.value,'$.startSlot') start_slot,
-            json_extract(d.value,'$.endDepot') end_depot,COALESCE(json_extract(d.value,'$.endSlot'),json_extract(d.value,'$.returnSlot')) end_slot,
-            json_extract(d.value,'$.slotType') slot_type,json_extract(d.value,'$.pulloutMin') pullout_min,json_extract(d.value,'$.pullinMin') pullin_min
-     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) d
-     WHERE wp.monday=? AND CAST(COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) AS TEXT) IN (${nph})
-   `).bind(depotPath,mondayKey,...numbers).all(),
+ if(!total){const fallback=(DATA.fleet||[]).filter(v=>v.regular&&Number(v.number)!==1603);total=fallback.length;fleet=fallback.slice(offset,offset+limit)}
+ if(!fleet.length)return{date,rows:[],usedVehicles:0,activeVehicles:total,notUsedVehicles:total,total,offset,limit,nextOffset:null,slotCount:0,previewMode:false,planVersion:cache.version};
+ const labels=fleet.map(v=>String(v.label||`KOM ${v.number}`)),numbers=fleet.map(v=>String(v.number)),lph=labels.map(()=>"?").join(","),nph=numbers.map(()=>"?").join(",");
+ const [segRes,depotRes,slotCountRes,ovRes]=await Promise.all([
+   env.DB.prepare(`SELECT employee_id,employee_name,vehicle,vehicle_model,run,start_min,end_min,start_loc,end_loc,lines_json FROM plan_day_segments WHERE monday=? AND plan_version=? AND duty_date=? AND vehicle IN (${lph}) AND training_ride=0 AND manual_vehicle=0 ORDER BY vehicle,start_min`).bind(mondayKey,cache.version,date,...labels).all(),
+   env.DB.prepare(`SELECT vehicle_number,used,start_depot,start_slot,end_depot,end_slot,slot_type,pullout_min,pullin_min FROM plan_day_depot WHERE monday=? AND plan_version=? AND duty_date=? AND vehicle_number IN (${nph})`).bind(mondayKey,cache.version,date,...numbers).all(),
    env.DB.prepare(`SELECT COUNT(*) c FROM depot_slots WHERE active=1`).first(),
    env.DB.prepare(`SELECT employee_id FROM duty_overrides WHERE duty_date=?`).bind(date).all()
  ]);
- if(!meta)return null;
-
  const overridden=new Set((ovRes.results||[]).map(x=>String(x.employee_id))),byVehicle=new Map();
  for(const v of fleet){const key=String(v.label||`KOM ${v.number}`);byVehicle.set(key,{vehicle:key,model:v.model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]})}
  for(const seg of segRes.results||[]){
-   const eid=String(seg.employee_id||seg.segment_employee_id||"");if(overridden.has(eid))continue;
-   const key=String(seg.vehicle||"");if(!key)continue;
-   const rowV=byVehicle.get(key);if(!rowV)continue;
+   const eid=String(seg.employee_id||"");if(overridden.has(eid))continue;
+   const rowV=byVehicle.get(String(seg.vehicle||""));if(!rowV)continue;
    rowV.used=true;if(!rowV.model)rowV.model=seg.vehicle_model||"";
    const run=String(seg.run||"").trim();if(run&&!rowV.runs.includes(run))rowV.runs.push(run);
    const sm=Number(seg.start_min),em=Number(seg.end_min),st=Number.isFinite(sm)?minToTime(sm):"",et=Number.isFinite(em)?minToTime(em):"";
@@ -1125,11 +1105,9 @@ async function vehicleDayRowsLite(env,mondayKey,date,q,offset=0,limit=60){
    if(!rowV.endTime||(et&&et>rowV.endTime)){rowV.endTime=et;rowV.endLoc=endLoc}
    for(const line of lines)if(line&&!rowV.lines.includes(line))rowV.lines.push(line);
  }
- const depotAssignments=new Map((depotRes.results||[]).map(a=>[String(a.vehicle_number),a]));
- const today=berlinDateKey(),nowMin=berlinMinuteOfDay(),rows=[...byVehicle.values()];
+ const depotAssignments=new Map((depotRes.results||[]).map(a=>[String(a.vehicle_number),a])),today=berlinDateKey(),nowMin=berlinMinuteOfDay(),rows=[...byVehicle.values()];
  for(const rowV of rows){
-   rowV.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));
-   const seen=new Set();rowV.drivers=rowV.drivers.filter(x=>{const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))return false;seen.add(k);return true});
+   rowV.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));const seen=new Set();rowV.drivers=rowV.drivers.filter(x=>{const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))return false;seen.add(k);return true});
    const vn=String((rowV.vehicle.match(/\d+/)||[""])[0]),a=depotAssignments.get(vn);
    if(a){rowV.startDepot=a.start_depot||"";rowV.startSlot=a.start_slot||"";rowV.endDepot=a.end_depot||"";rowV.endSlot=a.end_slot||"";rowV.returnSlot=rowV.endSlot;rowV.slotType=a.slot_type||"";rowV.pulloutMin=Number.isFinite(Number(a.pullout_min))?Number(a.pullout_min):null;rowV.pullinMin=Number.isFinite(Number(a.pullin_min))?Number(a.pullin_min):null}
    if(!rowV.startSlot&&!rowV.endSlot){rowV.locationStatus="Stellplatz noch nicht geplant";rowV.currentSlot="";rowV.currentDepot=""}
@@ -1139,8 +1117,7 @@ async function vehicleDayRowsLite(env,mondayKey,date,q,offset=0,limit=60){
    else{const out=Number.isFinite(rowV.pulloutMin)?rowV.pulloutMin:slotClock(rowV.startTime,0),inn=Number.isFinite(rowV.pullinMin)?rowV.pullinMin:slotClock(rowV.endTime,48*60);if(nowMin<out){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||"";rowV.currentDepot=rowV.startDepot||""}else if(nowMin>=inn){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.endSlot||"";rowV.currentDepot=rowV.endDepot||""}else{rowV.locationStatus="Unterwegs";rowV.currentSlot="";rowV.currentDepot=""}}
  }
  const filtered=rows.filter(rowV=>{if(!qq)return true;const hay=[rowV.vehicle,rowV.model,rowV.used?"im einsatz":"nicht eingesetzt",rowV.runs.join(" "),rowV.startTime,rowV.endTime,rowV.startLoc,rowV.endLoc,rowV.startSlot,rowV.endSlot,rowV.startDepot,rowV.endDepot,rowV.currentSlot,rowV.currentDepot,rowV.locationStatus,rowV.lines.join(" "),...rowV.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
- const nextOffset=offset+limit<total?offset+limit:null;
- return{date,rows:filtered,usedVehicles:rows.filter(r=>r.used).length,activeVehicles:total,notUsedVehicles:Math.max(0,total-rows.filter(r=>r.used).length),total,offset,limit,nextOffset,slotCount:Number(slotCountRes?.c||0),slotReservations:{},slotConflicts:[],depotAssignmentsFixed:true,previewMode:!!meta.root_preview||!!meta.day_preview,missingVehicleAssignments:[],planVersion:Number(meta.version||0)};
+ return{date,rows:filtered,usedVehicles:rows.filter(r=>r.used).length,activeVehicles:total,notUsedVehicles:Math.max(0,total-rows.filter(r=>r.used).length),total,offset,limit,nextOffset:offset+limit<total?offset+limit:null,slotCount:Number(slotCountRes?.c||0),slotReservations:{},slotConflicts:[],depotAssignmentsFixed:true,previewMode:cache.rootPreview||cache.dayPreview,missingVehicleAssignments:[],planVersion:cache.version};
 }
 
 const ANNUAL_VACATION_DAYS=30;
@@ -1178,6 +1155,85 @@ async function ensureDepotPairingMigrationV6431(env){
  await env.DB.prepare(`DELETE FROM depot_sync_pairing`).run();
  await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES(?,?,?)`).bind(key,"done",now).run();
 }
+async function ensureDayCacheSchemaV6469(env){
+ let done=null;try{done=await env.DB.prepare(`SELECT value FROM app_meta WHERE key='schema_day_cache_v6469'`).first()}catch{}
+ if(done)return;
+ await env.DB.batch([
+   env.DB.prepare(`CREATE TABLE IF NOT EXISTS plan_day_segments(
+     monday TEXT NOT NULL,plan_version INTEGER NOT NULL,duty_date TEXT NOT NULL,employee_id TEXT NOT NULL,seq INTEGER NOT NULL,
+     segment_json TEXT NOT NULL,employee_name TEXT,vehicle TEXT,vehicle_model TEXT,run TEXT,start_min INTEGER,end_min INTEGER,
+     start_loc TEXT,end_loc TEXT,lines_json TEXT,training_ride INTEGER NOT NULL DEFAULT 0,manual_vehicle INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY(monday,plan_version,duty_date,employee_id,seq)
+   )`),
+   env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_plan_day_segments_vehicle ON plan_day_segments(monday,plan_version,duty_date,vehicle)`),
+   env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_plan_day_segments_employee ON plan_day_segments(monday,plan_version,duty_date,employee_id)`),
+   env.DB.prepare(`CREATE TABLE IF NOT EXISTS plan_day_depot(
+     monday TEXT NOT NULL,plan_version INTEGER NOT NULL,duty_date TEXT NOT NULL,vehicle_number TEXT NOT NULL,used INTEGER NOT NULL DEFAULT 0,
+     start_depot TEXT,start_slot TEXT,end_depot TEXT,end_slot TEXT,slot_type TEXT,pullout_min INTEGER,pullin_min INTEGER,
+     PRIMARY KEY(monday,plan_version,duty_date,vehicle_number)
+   )`),
+   env.DB.prepare(`CREATE INDEX IF NOT EXISTS idx_plan_day_depot_date ON plan_day_depot(monday,plan_version,duty_date)`),
+   env.DB.prepare(`CREATE TABLE IF NOT EXISTS plan_day_cache_meta(
+     monday TEXT NOT NULL,plan_version INTEGER NOT NULL,duty_date TEXT NOT NULL,seed TEXT,root_preview INTEGER NOT NULL DEFAULT 0,
+     day_preview INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,
+     PRIMARY KEY(monday,plan_version,duty_date)
+   )`)
+ ]);
+ await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES('schema_day_cache_v6469','done',?)`).bind(new Date().toISOString()).run();
+}
+async function invalidateMaterializedDayV6469(env,mondayKey,version,date){
+ await env.DB.batch([
+   env.DB.prepare(`DELETE FROM plan_day_cache_meta WHERE monday=? AND plan_version=? AND duty_date=?`).bind(mondayKey,version,date),
+   env.DB.prepare(`DELETE FROM plan_day_segments WHERE monday=? AND plan_version=? AND duty_date=?`).bind(mondayKey,version,date),
+   env.DB.prepare(`DELETE FROM plan_day_depot WHERE monday=? AND plan_version=? AND duty_date=?`).bind(mondayKey,version,date)
+ ]);
+}
+async function invalidateMaterializedWeekV6469(env,mondayKey,version){
+ await env.DB.batch([
+   env.DB.prepare(`DELETE FROM plan_day_cache_meta WHERE monday=? AND plan_version=?`).bind(mondayKey,version),
+   env.DB.prepare(`DELETE FROM plan_day_segments WHERE monday=? AND plan_version=?`).bind(mondayKey,version),
+   env.DB.prepare(`DELETE FROM plan_day_depot WHERE monday=? AND plan_version=?`).bind(mondayKey,version)
+ ]);
+}
+async function materializePlanDayV6469(env,mondayKey,date){
+ const head=await env.DB.prepare(`SELECT version,json_extract(plan_json,'$.seed') seed,json_extract(plan_json,'$.depotPreview') root_preview,json_extract(plan_json,?) day_preview FROM week_plans WHERE monday=?`)
+   .bind(`$."days"."${date}"."depotPreview"`,mondayKey).first();
+ if(!head)return null;
+ const version=Number(head.version||0);
+ const cached=await env.DB.prepare(`SELECT seed,root_preview,day_preview FROM plan_day_cache_meta WHERE monday=? AND plan_version=? AND duty_date=?`).bind(mondayKey,version,date).first();
+ if(cached)return{version,seed:String(cached.seed||head.seed||""),rootPreview:!!cached.root_preview,dayPreview:!!cached.day_preview};
+ const assignmentsPath=`$."days"."${date}"."assignments"`,depotPath=`$."days"."${date}"."depotSlots"`,now=new Date().toISOString();
+ await env.DB.batch([
+   env.DB.prepare(`DELETE FROM plan_day_segments WHERE monday=? AND duty_date=?`).bind(mondayKey,date),
+   env.DB.prepare(`DELETE FROM plan_day_depot WHERE monday=? AND duty_date=?`).bind(mondayKey,date),
+   env.DB.prepare(`
+     INSERT OR REPLACE INTO plan_day_segments(
+       monday,plan_version,duty_date,employee_id,seq,segment_json,employee_name,vehicle,vehicle_model,run,start_min,end_min,start_loc,end_loc,lines_json,training_ride,manual_vehicle
+     )
+     SELECT ?,?,?,a.key,CAST(s.key AS INTEGER),s.value,
+       json_extract(s.value,'$.employeeName'),json_extract(s.value,'$.vehicle'),json_extract(s.value,'$.vehicleModel'),json_extract(s.value,'$.run'),
+       json_extract(s.value,'$.start'),json_extract(s.value,'$.end'),json_extract(s.value,'$.startLoc'),json_extract(s.value,'$.endLoc'),
+       json_extract(s.value,'$.lines'),COALESCE(json_extract(s.value,'$.trainingRide'),0),COALESCE(json_extract(s.value,'$.manualVehicle'),0)
+     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a,json_each(a.value) s
+     WHERE wp.monday=? AND wp.version=?
+   `).bind(mondayKey,version,date,assignmentsPath,mondayKey,version),
+   env.DB.prepare(`
+     INSERT OR REPLACE INTO plan_day_depot(
+       monday,plan_version,duty_date,vehicle_number,used,start_depot,start_slot,end_depot,end_slot,slot_type,pullout_min,pullin_min
+     )
+     SELECT ?,?,?,CAST(COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) AS TEXT),
+       COALESCE(json_extract(d.value,'$.used'),0),json_extract(d.value,'$.startDepot'),json_extract(d.value,'$.startSlot'),
+       json_extract(d.value,'$.endDepot'),COALESCE(json_extract(d.value,'$.endSlot'),json_extract(d.value,'$.returnSlot')),
+       json_extract(d.value,'$.slotType'),json_extract(d.value,'$.pulloutMin'),json_extract(d.value,'$.pullinMin')
+     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) d
+     WHERE wp.monday=? AND wp.version=?
+   `).bind(mondayKey,version,date,depotPath,mondayKey,version),
+   env.DB.prepare(`INSERT OR REPLACE INTO plan_day_cache_meta(monday,plan_version,duty_date,seed,root_preview,day_preview,created_at) VALUES(?,?,?,?,?,?,?)`)
+     .bind(mondayKey,version,date,String(head.seed||""),head.root_preview?1:0,head.day_preview?1:0,now)
+ ]);
+ return{version,seed:String(head.seed||""),rootPreview:!!head.root_preview,dayPreview:!!head.day_preview};
+}
+
 let schemaReadyPromise=null;async function ensureSchemaOnce(env){
  if(!schemaReadyPromise)schemaReadyPromise=(async()=>{
    let ready=null;
@@ -1187,6 +1243,7 @@ let schemaReadyPromise=null;async function ensureSchemaOnce(env){
      await ensureDepotPairingMigrationV6431(env);
      await env.DB.prepare(`INSERT OR REPLACE INTO app_meta(key,value,updated_at) VALUES('schema_ready_v6449','done',?)`).bind(new Date().toISOString()).run();
    }
+   await ensureDayCacheSchemaV6469(env);
  })().catch(e=>{schemaReadyPromise=null;throw e});
  return schemaReadyPromise;
 }
@@ -1261,6 +1318,7 @@ async function planDepotDayV6462(env,date){
    env.DB.prepare(`UPDATE week_plan_versions SET plan_json=? WHERE monday=? AND version=?`).bind(body,plan.monday,plan.version)
  ]);
  await persistDepotPlanState(env,temp,now);
+ await invalidateMaterializedDayV6469(env,plan.monday,plan.version,date);
  const assigned=Object.keys(plan.days[date]?.depotSlots||{}).length;
  return{ok:true,date,planVersion:Number(plan.version||row.version||0),slotCount:slots.length,activeVehicles:fleet.length,assignedVehicles:assigned,previewMode:false,message:`Hofbelegung ${date}: ${assigned} von ${fleet.length} Wagen zugeordnet.`};
 }
@@ -1268,7 +1326,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.68",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.69",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
