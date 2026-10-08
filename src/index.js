@@ -1272,6 +1272,53 @@ function openOmsiDayPayload(plan,date){
  const slotPlan=Object.values(day.depotSlots||{});return{ok:true,date,dayType:dt,timetableLine,planVersion:Number(plan?.version||0),assignmentCount:assignments.length,assignments,slotPlan,note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. TL/GR-Fremdleistungen werden absichtlich nicht überschrieben."};
 }
 
+async function openOmsiDayPayloadLiteV6470(env,mondayKey,date){
+ const cache=await materializePlanDayV6469(env,mondayKey,date);
+ if(!cache)return null;
+ const d=parseDateKey(date),dt=dayType(d),timetableLine=OPENOMSI_TT_LINE_BY_DAYTYPE[dt]||"Montag-Freitag";
+ const r=await env.DB.prepare(`
+   SELECT run,vehicle,vehicle_model,MIN(start_min) first_start
+   FROM plan_day_segments
+   WHERE monday=? AND plan_version=? AND duty_date=?
+     AND training_ride=0 AND manual_vehicle=0
+     AND COALESCE(run,'')<>'' AND COALESCE(vehicle,'')<>''
+     AND vehicle<>'KOM offen'
+   GROUP BY run,vehicle,vehicle_model
+   ORDER BY first_start,run
+ `).bind(mondayKey,cache.version,date).all();
+ const seenTours=new Set(),assignments=[];
+ for(const x of r.results||[]){
+   const sourceRun=String(x.run||"").trim();
+   const tour=String(TT_ALIASES?.[dt]?.[sourceRun]||sourceRun).trim();
+   if(!tour||seenTours.has(tour))continue;
+   const tt=TT_SCHEDULE?.[dt]?.[tour]||null,aiGroup=String(tt?.c||"");
+   if(/(?:^|\s)(?:TL|GR)(?:\s|$)/i.test(tour)||/^TL Tours\b/i.test(aiGroup)||/^Groeger\b/i.test(aiGroup))continue;
+   const m=String(x.vehicle||"").match(/\d+/),vehicleNumber=m?.[0]||"";
+   if(!vehicleNumber)continue;
+   seenTours.add(tour);
+   const serviceLines=[...new Set((tt?.x||[]).map(z=>ttLine(z?.l)).filter(Boolean))];
+   assignments.push({
+     tour,sourceRun,timetableLine,vehicleNumber,
+     vehicleLabel:String(x.vehicle||`KOM ${vehicleNumber}`),
+     vehicleModel:String(x.vehicle_model||""),
+     aiGroup,serviceLines
+   });
+ }
+ assignments.sort((a,b)=>a.tour.localeCompare(b.tour,"de",{numeric:true,sensitivity:"base"}));
+ const slotRows=await env.DB.prepare(`
+   SELECT vehicle_number vehicleNumber,used,start_depot startDepot,start_slot startSlot,end_depot endDepot,end_slot endSlot,
+          end_slot returnSlot,slot_type slotType,pullout_min pulloutMin,pullin_min pullinMin
+   FROM plan_day_depot
+   WHERE monday=? AND plan_version=? AND duty_date=?
+   ORDER BY CAST(vehicle_number AS INTEGER),vehicle_number
+ `).bind(mondayKey,cache.version,date).all();
+ return{
+   ok:true,date,dayType:dt,timetableLine,planVersion:cache.version,
+   assignmentCount:assignments.length,assignments,slotPlan:slotRows.results||[],
+   note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. Live-KI liest den materialisierten Tagescache; TL/GR-Fremdleistungen werden nicht überschrieben."
+ };
+}
+
 async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
  if(ensurePlanning)plan=await ensureDepotPlanState(env,plan);
  const day=plan?.days?.[date];
@@ -1326,7 +1373,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.69",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.70",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1351,7 +1398,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
    p==="/api/admin/personnel-movements";
  if(needsEmployeeHydration)
    try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
- if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);return json(openOmsiDayPayload(plan,date),200,{"cache-control":"no-store"})}
+ if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),payload=await openOmsiDayPayloadLiteV6470(env,mk,date);if(!payload)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);return json(payload,200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
      if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre koppelt automatisch neu."},401);
