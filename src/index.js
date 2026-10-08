@@ -77,7 +77,36 @@ function depotForRun(run){let tt=ttTourFor(run),first=(tt?.x||[]).find(x=>/^Ausr
 function isVacation(emp,d){return false} // Urlaub entsteht nur durch genehmigte Urlaubswünsche / manuelle Overrides.
 function isSick(emp,d){return false} // Krankmeldungen werden stabil in D1 als zeitlich begrenzte Overrides gespeichert.
 function dayType(d){return d.getUTCDay()===6?"SA":d.getUTCDay()===0?"SO":"WK"}
-function selectRuns(d){const dt=dayType(d),friday=d.getUTCDay()===5,holiday=false,all=DATA.runs.filter(r=>r.dayType===dt),by={};for(const r of all)(by[r.runNum]??=[]).push(r);const out=[];for(const rs of Object.values(by)){let chosen=null;if(friday)chosen=rs.find(x=>x.flags.includes("FR"));if(holiday&&!chosen)chosen=rs.find(x=>x.flags.includes("F")&&!x.flags.includes("FR"));if(!chosen)chosen=rs.find(x=>!x.flags.includes("F")&&!x.flags.includes("FR"));if(chosen)out.push(chosen)}return out}
+// Amtliche NRW-Schulferien bis Frühjahr 2030; keine API-Abfrage pro Worker-Ausführung.
+// https://bass.schule.nrw/19662.htm (bewegliche Ferientage sind individuell und nicht enthalten).
+const NRW_SCHOOL_HOLIDAYS=[
+ ["2024-07-08","2024-08-20"],["2024-10-14","2024-10-26"],["2024-12-23","2025-01-06"],
+ ["2025-04-14","2025-04-26"],["2025-06-10","2025-06-10"],["2025-07-14","2025-08-26"],
+ ["2025-10-13","2025-10-25"],["2025-12-22","2026-01-06"],["2026-03-30","2026-04-11"],
+ ["2026-05-26","2026-05-26"],["2026-07-20","2026-09-01"],["2026-10-17","2026-10-31"],
+ ["2026-12-23","2027-01-06"],["2027-03-22","2027-04-03"],["2027-05-18","2027-05-18"],
+ ["2027-07-19","2027-08-31"],["2027-10-23","2027-11-06"],["2027-12-24","2028-01-08"],
+ ["2028-04-10","2028-04-22"],["2028-07-10","2028-08-22"],["2028-10-23","2028-11-04"],
+ ["2028-12-21","2029-01-05"],["2029-03-26","2029-04-07"],["2029-05-22","2029-05-22"],
+ ["2029-07-02","2029-08-14"],["2029-10-15","2029-10-27"],["2029-12-20","2030-01-04"],
+ ["2030-04-15","2030-04-27"]
+];
+function isNrwSchoolHoliday(d){const key=dateKey(d);return NRW_SCHOOL_HOLIDAYS.some(([from,to])=>key>=from&&key<=to)}
+function selectRuns(d){
+ const dt=dayType(d),friday=d.getUTCDay()===5,holiday=isNrwSchoolHoliday(d),all=DATA.runs.filter(r=>r.dayType===dt),by={};
+ for(const r of all)(by[r.runNum]??=[]).push(r);
+ const out=[];
+ for(const rs of Object.values(by)){
+  // F = Ferien, FR = Freitag, F+FR = Ferien-Freitag.
+  let chosen=null;
+  if(holiday&&friday)chosen=rs.find(x=>x.flags.includes("F")&&x.flags.includes("FR"));
+  if(holiday&&!chosen)chosen=rs.find(x=>x.flags.includes("F")&&!x.flags.includes("FR"));
+  if(friday&&!chosen)chosen=rs.find(x=>x.flags.includes("FR")&&!x.flags.includes("F"));
+  if(!chosen)chosen=rs.find(x=>!x.flags.includes("F")&&!x.flags.includes("FR"));
+  if(chosen)out.push(chosen);
+ }
+ return out;
+}
 function vehicleGroupForCategory(cat){return ["1","3","5","7"].includes(String(cat))?"artic":"solo"}
 function eligibleVehicle(v,cat){/* Die Website disponiert einzelne reale Wagen zufällig. Die alten Merkmale alternative/large/regio dürfen keine Hersteller- oder Modellserie bevorzugen. Nur die benötigte Grundbauart (Solo/Gelenk) und der Status "Im Betrieb" bleiben bindend. */return !!v?.regular&&v.group===vehicleGroupForCategory(cat)}
 function vehicleFor(cat,used,seed,fleet=DATA.fleet,run=null){
@@ -108,42 +137,8 @@ function wholeSpecial(run,seed,cfg=DEFAULT_GENERATION_SETTINGS){let ps=splitRun(
 function isSpecialRunSegment(s){return !!(s?.tl||s?.gr||s?.manualVehicle||s?.specialOperator)}
 function breakMinutes(p){return(p.internalBreaks||[]).reduce((n,b)=>n+(b.end-b.start),0)}function effectiveDriveMinutes(p){return Math.max(0,(p.end-p.start)-breakMinutes(p))}
 function managementDrive(emp,d,seed=""){let dow=d.getUTCDay();if(dow===0||dow===6)return hash(emp.id+dateKey(d)+"weekend"+seed)%100<55;let mon=dateKey(mondayOf(d)),h=hash(emp.id+mon+"mgmtprofile"+seed),count=h%100<25?5:(h%100<78?4:3),days=shuffle([1,2,3,4,5],emp.id+mon+"mgmtdays"+seed).slice(0,count);return days.includes(dow)}
-const ANNUAL_FREE_DAYS=30;
-const ANNUAL_FREE_DATE_CACHE=new Map();
-const YEAR_DATE_KEYS_CACHE=new Map();
-function yearDateKeys(year){
- let cached=YEAR_DATE_KEYS_CACHE.get(year);if(cached)return cached;
- let d=new Date(Date.UTC(year,0,1,12)),end=new Date(Date.UTC(year+1,0,1,12)),out=[];
- while(d<end){out.push(dateKey(d));d=addDays(d,1)}
- YEAR_DATE_KEYS_CACHE.set(year,out);return out;
-}
-function gcdInt(a,b){a=Math.abs(a);b=Math.abs(b);while(b){let t=a%b;a=b;b=t}return a||1}
-function annualFreeDateSet(emp,year){
- const key=`${emp.id}|${year}`,cached=ANNUAL_FREE_DATE_CACHE.get(key);if(cached)return cached;
- const ys=`${year}-01-01`,ye=`${year}-12-31`,from=emp.startDate&&emp.startDate>ys?emp.startDate:ys,to=emp.endDate&&emp.endDate<ye?emp.endDate:ye;
- const candidates=from>to?[]:yearDateKeys(year).filter(k=>k>=from&&k<=to),selected=new Set(),n=candidates.length,count=Math.min(ANNUAL_FREE_DAYS,n);
- if(n&&count){
-   let idx=hash(`${emp.id}|${year}|annual-free-start-v6438`)%n;
-   let step=1+(hash(`${emp.id}|${year}|annual-free-step-v6438`)%Math.max(1,n-1));
-   while(gcdInt(step,n)!==1)step=step%n+1;
-   for(let i=0;i<count;i++){selected.add(candidates[idx]);idx=(idx+step)%n}
- }
- ANNUAL_FREE_DATE_CACHE.set(key,selected);return selected;
-}
-function isAnnualFreeDay(emp,d){
- if(!emp)return false;
- const year=d.getUTCFullYear(),k=dateKey(d),ys=`${year}-01-01`,ye=`${year}-12-31`;
- const from=emp.startDate&&emp.startDate>ys?emp.startDate:ys,to=emp.endDate&&emp.endDate<ye?emp.endDate:ye;
- if(from>to||k<from||k>to)return false;
- const dayNo=s=>{const m=String(s).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?Math.floor(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]))/86400000):0};
- const base=dayNo(from),n=dayNo(to)-base+1,target=dayNo(k)-base,count=Math.min(ANNUAL_FREE_DAYS,n);
- if(n<=0||target<0||target>=n||count<=0)return false;
- let idx=hash(`${emp.id}|${year}|annual-free-start-v6438`)%n;
- let step=1+(hash(`${emp.id}|${year}|annual-free-step-v6438`)%Math.max(1,n-1));
- while(gcdInt(step,n)!==1)step=step%n+1;
- for(let i=0;i<count;i++){if(idx===target)return true;idx=(idx+step)%n}
- return false;
-}
+// Frei-Tage entstehen ausschließlich durch manuelle Admin-Overrides.
+function isAnnualFreeDay(){return false}
 const DEFAULT_GENERATION_SETTINGS={targetDriveMinutes:450,longBlockThreshold:210,longBreakMinutes:45,shortBreakMinutes:30,reserveEarlyStart:"06:00",reserveEarlyEnd:"13:00",reserveLateStart:"13:00",reserveLateEnd:"21:00"};
 const UNLIMITED_EMPLOYEE_SETTINGS={_custom:false,targetDriveMinutes:450,longBlockThreshold:210,longBreakMinutes:45,shortBreakMinutes:30};
 function cfgNum(cfg,key,fallback){let n=Number(cfg?.[key]);return Number.isFinite(n)?n:fallback}
@@ -224,7 +219,7 @@ function reserveAcceptedIds(d,day,cfg=DEFAULT_GENERATION_SETTINGS){
  let ids=new Set(accepted.map(x=>x.employeeId));RESERVE_SELECTION_CACHE.set(day,{key,ids});return ids;
 }
 function reserveIsAccepted(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){return reserveAcceptedIds(d,day,cfg).has(emp.id)}
-function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=employeeLifecycleStatus(emp,d);if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};if(louisOnboardingActive(emp,d))return louisOnboardingStatus(d);let segs=(day.assignments[emp.id]||[]).sort((a,b)=>a.start-b.start),ay=apprenticeshipYearForDate(emp,d),dow0=d.getUTCDay(),weekend0=dow0===0||dow0===6;if(isAnnualFreeDay(emp,d)&&!segs.length)return{status:"Frei",dutyType:`Frei · Jahreskontingent ${ANNUAL_FREE_DAYS} Tage`,depot:"",serviceTime:"",segments:[]};
+function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=employeeLifecycleStatus(emp,d);if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};if(louisOnboardingActive(emp,d))return louisOnboardingStatus(d);let segs=(day.assignments[emp.id]||[]).sort((a,b)=>a.start-b.start),ay=apprenticeshipYearForDate(emp,d),dow0=d.getUTCDay(),weekend0=dow0===0||dow0===6;
  if((ay===1||ay===2)&&segs.length&&segs.every(x=>x.trainingRide)){
    let st=segs[0].start,en=Math.max(...segs.map(x=>x.end)),mentor=segs[0].mentorName||"Busfahrer",depot=depotFrom(emp,segs);
    let duty=ay===1?"1. Lehrjahr · Bereichsrotation Fahrdienst / Mitfahrt":"2. Lehrjahr · Begleitfahrt Klasse D";
@@ -614,7 +609,7 @@ function apprenticeMilestones(emp){let cy=Number(emp.apprenticeCohort||0);if(!cy
 function apprenticeTrainingState(emp,d=new Date()){let year=apprenticeshipYearForDate(emp,d),k=dateKey(d),m=apprenticeMilestones(emp);if(!m)return{year,phase:"",mpuDate:"",examDate:"",classDPassed:false,canDrive:false};if(year===1)return{year,phase:"Bereichsrotation / Pkw-Führerschein",...m,classDPassed:false,canDrive:false};if(year===2){let age=ageOnDate(emp.birthDate||"",k)||0,passed=!!m.examDate&&k>=m.examDate&&age>=18;if(k===m.mpuDate)return{year,phase:"MPU / Eignungsuntersuchung",...m,classDPassed:false,canDrive:false};if(k<m.practiceStart)return{year,phase:"Klasse D · Theorie / Schulungen",...m,classDPassed:false,canDrive:false};if(m.examDate&&k===m.examDate)return{year,phase:"Klasse D · Prüfung",...m,classDPassed:false,canDrive:false};passed=!!m.examDate&&k>m.examDate&&age>=18;if(!passed)return{year,phase:"Klasse D · Praxis / Begleitfahrten",...m,classDPassed:false,canDrive:false};return{year,phase:"Klasse D bestanden · Ausbildungsfahrdienst",...m,classDPassed:true,canDrive:true}}if(year===3)return{year,phase:"Selbstständiger Ausbildungsfahrdienst",...m,classDPassed:true,canDrive:true};if(year===4)return{year,phase:"Ausgelernt",...m,classDPassed:true,canDrive:true};return{year,phase:"",...m,classDPassed:false,canDrive:false}}
 function apprenticeCanDrive(emp,d=new Date()){return !!apprenticeTrainingState(emp,d).canDrive}
 function activeApprenticeYear(emp,d=new Date()){let y=apprenticeshipYearForDate(emp,d);return y>=1&&y<=3?y:0}
-function apprenticeWeekendOff(emp,d=new Date()){let y=activeApprenticeYear(emp,d);return !!y&&isAnnualFreeDay(emp,d)}
+function apprenticeWeekendOff(){return false} // Keine automatisch vorgegebenen freien Tage.
 function youthWorkWindowAllows(emp,segs,d=new Date()){let age=ageOnDate(emp.birthDate||"",dateKey(d));if(age===null||age>=18)return true;if(!Array.isArray(segs)||!segs.length)return true;let st=Math.min(...segs.map(x=>Number(x.start))),en=Math.max(...segs.map(x=>Number(x.end)));return st>=360&&en<=1320}
 function apprenticeOwnDrivingEligible(emp,d=new Date()){let y=activeApprenticeYear(emp,d);if(!y||apprenticeWeekendOff(emp,d))return false;if(y===3)return (ageOnDate(emp.birthDate||"",dateKey(d))||0)>=18;return apprenticeCanDrive(emp,d)&&(ageOnDate(emp.birthDate||"",dateKey(d))||0)>=18}
 const APPRENTICE_RIDE_MENTOR_POSITIONS=new Set(["Busfahrer","Reservefahrer / Springer","Teamkoordinator Fahrdienst","Fahrtrainer / Einweiser","Betriebsleiter Bereich Transport"]);
@@ -753,78 +748,65 @@ async function savePlanVersion(env,plan,by,mode="full",note="",activate=true){
   return plan;
 }
 
-async function ensureRandomStaffEvents(env,mondayKey){
-  if(!/^\d{4}-\d{2}-\d{2}$/.test(mondayKey))return;
-  const today=new Date(),todayKey=dateKey(today),currentMondayKey=dateKey(mondayOf(today));
-  const monday=parseDateKey(mondayKey),active=DATA.employees.filter(e=>employeeActiveOn(e,today));
-  if(!active.length)return;
-  const now=new Date().toISOString();
+// Einmaliger Umstieg: alte Urlaubs-/Frei-Einträge und Urlaubswünsche entfernen.
+// Ausschließlich beim täglichen Cron; niemals auf Webseiten- oder API-Lesezugriffen.
+async function resetStaffAbsencesForSimulation(env){
+ const key="staff-absence-reset-v6479";
+ if(await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(key).first())return;
+ const now=new Date().toISOString();
+ await env.DB.batch([
+  env.DB.prepare(`DELETE FROM duty_overrides WHERE kind IN ('Urlaub','Frei')`),
+  env.DB.prepare(`DELETE FROM objections WHERE type='Urlaubswunsch'`),
+  env.DB.prepare(`INSERT OR IGNORE INTO automation_state(key,value,updated_at) VALUES(?,?,?)`).bind(key,"done",now)
+ ]);
+ await bumpDutyRevision(env);
+}
 
-  // Bereinige alte, automatisch erzeugte Krankmeldungen aus früheren Versionen,
-  // die fälschlich erst in der Zukunft beginnen. Eine Krankmeldung darf nur ab
-  // dem Tag ihrer Meldung gelten; zukünftige Abwesenheiten gehören in den Urlaub.
-  const obsoleteFutureSick=await env.DB.prepare(`SELECT id,employee_id,requested_date,requested_time FROM objections WHERE type='Krankmeldung' AND requested_date>?`).bind(todayKey).all();
-  for(const r of obsoleteFutureSick.results||[]){
-    let end=/^\d{4}-\d{2}-\d{2}$/.test(String(r.requested_time||''))?r.requested_time:r.requested_date;
-    await env.DB.prepare(`DELETE FROM duty_overrides WHERE employee_id=? AND created_by='system-random' AND kind='Krank' AND duty_date>=? AND duty_date<=?`).bind(r.employee_id,r.requested_date,end).run();
-    await env.DB.prepare(`DELETE FROM objections WHERE id=?`).bind(r.id).run();
+// Tägliche Krankmeldungen, alle 3 Tage neue Urlaubsanträge. Nur ein D1-Write-Batch.
+async function ensureRandomStaffEvents(env,scheduledAt=new Date()){
+ const todayKey=berlinDateKey(scheduledAt),now=new Date().toISOString();
+ const marker=`staff-events:${todayKey}:v6479`;
+ if(await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(marker).first())return;
+ const today=parseDateKey(todayKey),active=DATA.employees.filter(e=>employeeActiveOn(e,today)),statements=[];
+ let sickMade=0,vacationMade=0;
+ if(active.length){
+  // Schon eingetragene Dienste, Urlaub, Frei und laufende Krankmeldungen nicht überschreiben.
+  const sickEnd=dateKey(addDays(today,6));
+  const occupiedRows=await env.DB.prepare(`SELECT DISTINCT employee_id FROM duty_overrides WHERE duty_date BETWEEN ? AND ?`).bind(todayKey,sickEnd).all();
+  const occupied=new Set((occupiedRows.results||[]).map(r=>String(r.employee_id)));
+  const sickTarget=1+hash(`${todayKey}|sick-total-v6479`)%3;
+  for(const emp of shuffle(active,`${todayKey}|random-sick-v6479`)){
+   if(sickMade>=sickTarget)break;
+   if(occupied.has(emp.id))continue;
+   const duration=1+hash(`${todayKey}|sick-days|${emp.id}`)%7,end=dateKey(addDays(today,duration-1));
+   for(let i=0;i<duration;i++)statements.push(env.DB.prepare(`INSERT OR IGNORE INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
+    .bind(emp.id,dateKey(addDays(today,i)),"Krank","Krank","","","","Automatisch simulierte Krankmeldung","system-random",now,now));
+   statements.push(env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`)
+    .bind(emp.id,emp.name,todayKey,"Krankmeldung",end,`Heute krankgemeldet · voraussichtlich ${duration} Tag(e) · ${todayKey} bis ${end}.`,"info",now,now));
+   occupied.add(emp.id);sickMade++;
   }
-
-  // Krankmeldungen entstehen nur dann, wenn jemand JETZT krank ist.
-  // Deshalb werden neue Krankfälle ausschließlich für den heutigen Tag erzeugt
-  // und gelten ab heute für einige Tage bis maximal eine Woche. Niemals wird
-  // eine Krankmeldung zwei oder mehr Wochen im Voraus vorgemerkt.
-  let sickMade=0;
-  if(mondayKey===currentMondayKey){
-    const sickStateKey=`random-sick-events:${todayKey}:v6410`;
-    const sickDone=await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(sickStateKey).first();
-    if(!sickDone){
-      const byHash=[...active].sort((a,b)=>hash(`${todayKey}|sick-now|${a.id}`)-hash(`${todayKey}|sick-now|${b.id}`));
-      const sickCount=2+(hash(`${todayKey}|sick-count`)%5); // 2–6 neue Krankmeldungen an diesem Tag bei >1000 Beschäftigten.
-      for(const emp of byHash){
-        if(sickMade>=sickCount)break;
-        const existingToday=await env.DB.prepare(`SELECT id FROM duty_overrides WHERE employee_id=? AND duty_date=? LIMIT 1`).bind(emp.id,todayKey).first();
-        if(existingToday)continue;
-        const h=hash(`${todayKey}|sick-duration|${emp.id}`),duration=1+(h%7),start=parseDateKey(todayKey),end=addDays(start,duration-1);
-        let insertedAny=false;
-        for(let i=0;i<duration;i++){
-          const day=dateKey(addDays(start,i));
-          const r=await env.DB.prepare(`INSERT OR IGNORE INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`)
-            .bind(emp.id,day,'Krank','Krank','','','','Automatisch simulierte aktuelle Krankmeldung','system-random',now,now).run();
-          if((r?.meta?.changes||0)>0)insertedAny=true;
-        }
-        if(insertedAny){
-          await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?, ?, ?)`)
-            .bind(emp.id,emp.name,todayKey,'Krankmeldung',dateKey(end),`Heute krankgemeldet · voraussichtlich ${duration} Tag(e) · ${todayKey} bis ${dateKey(end)}.`,'info',now,now).run();
-          sickMade++;
-        }
-      }
-      await env.DB.prepare(`INSERT INTO automation_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
-        .bind(sickStateKey,JSON.stringify({sickMade,date:todayKey}),now).run();
-    }
+  if(Math.floor(today.getTime()/86400000)%3===0){
+   const reqs=await env.DB.prepare(`SELECT DISTINCT employee_id FROM objections WHERE type='Urlaubswunsch' AND status='offen'`).all();
+   const pending=new Set((reqs.results||[]).map(r=>String(r.employee_id))),target=2+hash(`${todayKey}|vac-total-v6479`)%4;
+   let attempts=0;
+   for(const emp of shuffle(active,`${todayKey}|random-vacation-v6479`)){
+    if(vacationMade>=target||attempts>=40)break;
+    attempts++;if(pending.has(emp.id))continue;
+    const n=hash(`${todayKey}|vac-span|${emp.id}`),lead=14+n%60,duration=2+((n>>>9)%8);
+    const start=dateKey(addDays(today,lead)),end=dateKey(addDays(parseDateKey(start),duration-1));
+    if(!employeeActiveOn(emp,parseDateKey(start))||!employeeActiveOn(emp,parseDateKey(end)))continue;
+    const cap=await vacationCapacityForRange(env,emp.id,start,end);
+    if(!cap.ok)continue;
+    const remaining=Number(cap.details?.[0]?.remaining??ANNUAL_VACATION_DAYS);
+    statements.push(env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)`)
+     .bind(emp.id,emp.name,start,"Urlaubswunsch",end,`Automatischer Urlaubswunsch: ${start} bis ${end} (${duration} Tage). Noch ${remaining} von ${ANNUAL_VACATION_DAYS} Urlaubstagen verfügbar.`,"offen",now,now));
+    pending.add(emp.id);vacationMade++;
+   }
   }
-
-  // Urlaubswünsche dürfen dagegen bewusst in der Zukunft liegen und müssen vom Admin genehmigt werden.
-  // Pro Planwoche wird nur eine kleine Anzahl erzeugt, damit die Liste realistisch bleibt.
-  const vacationStateKey=`random-vacation-requests:${mondayKey}:v6410`;
-  const vacationDone=await env.DB.prepare(`SELECT value FROM automation_state WHERE key=?`).bind(vacationStateKey).first();
-  let vacationMade=0;
-  if(!vacationDone){
-    const byHash=[...active].sort((a,b)=>hash(`${mondayKey}|vac-event|${a.id}`)-hash(`${mondayKey}|vac-event|${b.id}`));
-    const vacationCount=Math.max(2,Math.min(5,Math.round(active.length/400)));
-    for(const emp of byHash.slice().reverse()){
-      if(vacationMade>=vacationCount)break;
-      const open=await env.DB.prepare(`SELECT id FROM objections WHERE employee_id=? AND type='Urlaubswunsch' AND status='offen' LIMIT 1`).bind(emp.id).first();
-      if(open)continue;
-      const h=hash(`${mondayKey}|vac-request|${emp.id}`),lead=14+(h%57),duration=3+((h>>>8)%8),start=addDays(monday,lead),end=addDays(start,duration-1),startKey=dateKey(start),endKey=dateKey(end);
-      const cap=await vacationCapacityForRange(env,emp.id,startKey,endKey);if(!cap.ok)continue;let used=await vacationDaysUsed(env,emp.id,Number(startKey.slice(0,4))),remaining=Math.max(0,ANNUAL_VACATION_DAYS-used);
-      await env.DB.prepare(`INSERT INTO objections(employee_id,employee_name,requested_date,type,requested_time,message,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'offen',?,?)`)
-        .bind(emp.id,emp.name,startKey,'Urlaubswunsch',endKey,`Automatischer Urlaubswunsch: ${startKey} bis ${endKey} (${duration} Tage). Aktuell noch ${remaining} von ${ANNUAL_VACATION_DAYS} Urlaubstagen im Kalenderjahr verfügbar.`,now,now).run();
-      vacationMade++;
-    }
-    await env.DB.prepare(`INSERT INTO automation_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`)
-      .bind(vacationStateKey,JSON.stringify({vacationMade,monday:mondayKey}),now).run();
-  }
+ }
+ statements.push(env.DB.prepare(`INSERT OR IGNORE INTO automation_state(key,value,updated_at) VALUES(?,?,?)`).bind(marker,JSON.stringify({sickMade,vacationMade}),now));
+ await env.DB.batch(statements);
+ if(sickMade||vacationMade)await bumpDutyRevision(env);
 }
 
 async function getNextPlanVersionV63(env,mk){let r=await env.DB.prepare(`SELECT MAX(version) v FROM week_plan_versions WHERE monday=?`).bind(mk).first(),active=await env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first();return Math.max(Number(r?.v||0),Number(active?.version||0))+1}
@@ -905,7 +887,7 @@ async function startChunkedWeekGeneration(env,mondayKey,by,opts={}){
  }
  // Abgebrochene eigene Jobs für dieselbe Woche werden verworfen; der aktive Plan bleibt unangetastet.
  await env.DB.prepare(`DELETE FROM week_generation_jobs WHERE monday=? AND generated_by=?`).bind(mondayKey,by).run();
- await ensureRandomStaffEvents(env,mondayKey);
+ 
  try{await syncFleetFromGoogle(env)}catch(e){console.warn("Fuhrpark-Sync vor Chunk-Generierung fehlgeschlagen:",e?.message||e)}
  const fleet=await loadFleetFromDb(env),rows=await env.DB.prepare(`SELECT employee_id,settings_json FROM employee_generation_settings`).all(),employeeSettings={};
  for(const r of rows.results||[]){try{employeeSettings[r.employee_id]=JSON.parse(r.settings_json)}catch{}}
@@ -950,9 +932,9 @@ async function loadExistingWeek(env,mondayKey){
  const row=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mondayKey).first();
  return row?JSON.parse(row.plan_json):null;
 }
-async function ensureWeek(env,mondayKey,by="system",force=false){let existing=await loadExistingWeek(env,mondayKey);if(existing&&!force)return existing;await ensureRandomStaffEvents(env,mondayKey);try{await syncFleetFromGoogle(env)}catch(e){console.warn("Fuhrpark-Sync vor Generierung fehlgeschlagen:",e?.message||e)}let fleet=await loadFleetFromDb(env),ver=await getNextPlanVersionV63(env,mondayKey),cfg={},seed=randomToken(8),rows=await env.DB.prepare(`SELECT employee_id,settings_json FROM employee_generation_settings`).all(),employeeSettings={};for(const r of rows.results||[]){try{employeeSettings[r.employee_id]=JSON.parse(r.settings_json)}catch{}}let plan=generateWeek(parseDateKey(mondayKey),ver,cfg,fleet,seed,employeeSettings);await savePlanVersion(env,plan,by,force?"reshuffle":"full",force?"Komplette Woche neu durchgewürfelt · individuelle Kriterien berücksichtigt":"Woche erzeugt · individuelle Kriterien berücksichtigt",true);return plan}
+async function ensureWeek(env,mondayKey,by="system",force=false){let existing=await loadExistingWeek(env,mondayKey);if(existing&&!force)return existing;try{await syncFleetFromGoogle(env)}catch(e){console.warn("Fuhrpark-Sync vor Generierung fehlgeschlagen:",e?.message||e)}let fleet=await loadFleetFromDb(env),ver=await getNextPlanVersionV63(env,mondayKey),cfg={},seed=randomToken(8),rows=await env.DB.prepare(`SELECT employee_id,settings_json FROM employee_generation_settings`).all(),employeeSettings={};for(const r of rows.results||[]){try{employeeSettings[r.employee_id]=JSON.parse(r.settings_json)}catch{}}let plan=generateWeek(parseDateKey(mondayKey),ver,cfg,fleet,seed,employeeSettings);await savePlanVersion(env,plan,by,force?"reshuffle":"full",force?"Komplette Woche neu durchgewürfelt · individuelle Kriterien berücksichtigt":"Woche erzeugt · individuelle Kriterien berücksichtigt",true);return plan}
 async function createPlanDraft(env,mondayKey,by="system"){
-  await ensureRandomStaffEvents(env,mondayKey);
+  
   try{await syncFleetFromGoogle(env)}catch(e){console.warn("Fuhrpark-Sync vor Entwurfsgenerierung fehlgeschlagen:",e?.message||e)}
   const fleet=await loadFleetFromDb(env),ver=await getNextPlanVersionV63(env,mondayKey),cfg={},seed=randomToken(8);
   const rows=await env.DB.prepare(`SELECT employee_id,settings_json FROM employee_generation_settings`).all(),employeeSettings={};
@@ -964,7 +946,7 @@ async function createPlanDraft(env,mondayKey,by="system"){
 
 async function regenerateSingleDay(env,mondayKey,dateKeyValue,by="system"){if(!/^\d{4}-\d{2}-\d{2}$/.test(mondayKey)||!/^\d{4}-\d{2}-\d{2}$/.test(dateKeyValue))throw new Error("Ungültiges Datum.");let mondayDate=parseDateKey(mondayKey),targetDate=parseDateKey(dateKeyValue),diff=Math.round((targetDate-mondayDate)/86400000);if(diff<0||diff>6)throw new Error("Der ausgewählte Tag liegt nicht in der angezeigten Woche.");let row=await env.DB.prepare(`SELECT plan_json FROM week_plans WHERE monday=?`).bind(mondayKey).first();if(!row)throw new Error("Bitte zuerst die Woche erzeugen.");try{await syncFleetFromGoogle(env)}catch(e){console.warn("Fuhrpark-Sync vor Tagesgenerierung fehlgeschlagen:",e?.message||e)}let fleet=await loadFleetFromDb(env),rows=await env.DB.prepare(`SELECT employee_id,settings_json FROM employee_generation_settings`).all(),employeeSettings={};for(const r of rows.results||[]){try{employeeSettings[r.employee_id]=JSON.parse(r.settings_json)}catch{}}let plan=JSON.parse(row.plan_json),seed=randomToken(8),ver=await getNextPlanVersionV63(env,mondayKey),settings={...DEFAULT_GENERATION_SETTINGS,_seed:seed};plan.version=ver;plan.generatedAt=new Date().toISOString();plan.employeeSettings={...employeeSettings};plan.daySeeds={...(plan.daySeeds||{}),[dateKeyValue]:seed};plan.days[dateKeyValue]=buildDay(targetDate,settings,fleet,seed,employeeSettings);return savePlanVersion(env,plan,by,"day",`Nur ${dateKeyValue} neu generiert · übrige sechs Tage unverändert`,true)}
 function applyOverride(base,ov){if(!ov)return base;let kind=ov.kind||"Individueller Dienst",status=kind,dutyType=ov.duty_type||kind,depot=ov.depot||"",serviceTime=(ov.start_time&&ov.end_time)?`${ov.start_time}-${ov.end_time}`:"";if(kind==="Urlaub")return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Krank")return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Frei")return{status:"Frei",dutyType:"Frei",depot:"",serviceTime:"",segments:[],manual:true,note:ov.note||""};if(kind==="Reserve")return{status:"Reserve",dutyType:dutyType||"Reserve",depot:depot||"Betriebshof Mitte",serviceTime:serviceTime||"06:00-13:00",segments:[],manual:true,note:ov.note||""};if(kind==="Organisation")return{status:"Organisation",dutyType:dutyType||"Betriebsleitung / Organisation",depot:depot||"Betriebshof Mitte",serviceTime:serviceTime||"08:00-16:00",segments:[],manual:true,note:ov.note||""};if(kind==="Fahrdienst")return{status:"Fahrdienst",dutyType:dutyType||"Fahrdienst",depot,serviceTime,segments:[],manual:true,note:ov.note||""};return{status:"Arbeit",dutyType:dutyType||"Individueller Dienst",depot,serviceTime,segments:[],manual:true,note:ov.note||""}}
-async function overrideMap(env,startDate,endDate,employeeId=null){let sql=`SELECT * FROM duty_overrides WHERE duty_date>=? AND duty_date<=?`,args=[startDate,endDate];if(employeeId){sql+=` AND employee_id=?`;args.push(employeeId)}let r=await env.DB.prepare(sql).bind(...args).all(),m=new Map();for(const x of r.results||[]){if(x.kind==="Frei"){let e=EMP_BY_ID.get(x.employee_id);if(!e||!isAnnualFreeDay(e,parseDateKey(x.duty_date)))continue}m.set(`${x.employee_id}|${x.duty_date}`,x)}return m}
+async function overrideMap(env,startDate,endDate,employeeId=null){let sql=`SELECT * FROM duty_overrides WHERE duty_date>=? AND duty_date<=?`,args=[startDate,endDate];if(employeeId){sql+=` AND employee_id=?`;args.push(employeeId)}let r=await env.DB.prepare(sql).bind(...args).all(),m=new Map();for(const x of r.results||[]){m.set(`${x.employee_id}|${x.duty_date}`,x)}return m}
 async function userWeek(plan,emp,env){let days=[],start=plan.monday,end=dateKey(addDays(parseDateKey(plan.monday),6)),ovs=await overrideMap(env,start,end,emp.id);for(let i=0;i<7;i++){let d=addDays(parseDateKey(plan.monday),i),key=dateKey(d),st=statusForEmployee(emp,d,plan.days[key],planCfgForEmployee(plan,emp.id,d)),ov=ovs.get(`${emp.id}|${key}`);days.push({date:key,...normalizeStopNames(applyOverride(st,ov))})}return{monday:plan.monday,version:plan.version,generatedAt:plan.generatedAt,days}}
 function parseJsonCell(v,fallback){if(v===null||v===undefined||v==="")return fallback;if(typeof v!=="string")return v;try{return JSON.parse(v)}catch{return fallback}}
 function liteStatusForEmployee(emp,d,segs,cfg=DEFAULT_GENERATION_SETTINGS){
@@ -973,7 +955,7 @@ function liteStatusForEmployee(emp,d,segs,cfg=DEFAULT_GENERATION_SETTINGS){
  if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};
  segs=[...(segs||[])].sort((a,b)=>a.start-b.start);
  let day={assignments:{[emp.id]:segs}},ay=apprenticeshipYearForDate(emp,d);
- if(isAnnualFreeDay(emp,d)&&!segs.length)return{status:"Frei",dutyType:`Frei · Jahreskontingent ${ANNUAL_FREE_DAYS} Tage`,depot:"",serviceTime:"",segments:[]};
+ 
  if((ay===1||ay===2)&&segs.length&&segs.every(x=>x.trainingRide)){
    let st=segs[0].start,en=Math.max(...segs.map(x=>x.end)),mentor=segs[0].mentorName||"Busfahrer",depot=depotFrom(emp,segs);
    let duty=ay===1?"1. Lehrjahr · Bereichsrotation Fahrdienst / Mitfahrt":"2. Lehrjahr · Begleitfahrt Klasse D";
@@ -1607,7 +1589,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  }
  if(p.startsWith("/api/admin/objection/")&&req.method==="POST"){let id=Number(p.split("/").pop()),b=await req.json(),status=["angenommen","abgelehnt","offen"].includes(b.status)?b.status:"offen",now=new Date().toISOString();await env.DB.prepare(`UPDATE objections SET status=?,admin_note=?,updated_at=? WHERE id=?`).bind(status,String(b.note||""),now,id).run();await bumpDutyRevision(env);return json({ok:true})}
  if(p==="/api/admin/override"&&req.method==="GET"){let eid=url.searchParams.get("employeeId"),date=url.searchParams.get("date"),emp2=EMP_BY_ID.get(eid);if(!emp2||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date||""))return json({error:"Mitarbeiter oder Datum ungültig."},400);let ov=await env.DB.prepare(`SELECT * FROM duty_overrides WHERE employee_id=? AND duty_date=?`).bind(eid,date).first(),mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);let base=statusForEmployee(emp2,parseDateKey(date),plan.days[date],planCfgForEmployee(plan,eid,parseDateKey(date))),effective=normalizeStopNames(applyOverride(base,ov)),parts=String(effective.serviceTime||"").split("-");let derivedKind=effective.status==="Fahrdienst"||String(effective.status||"").startsWith("Fahrdienst")?"Fahrdienst":effective.status==="Urlaub"?"Urlaub":effective.status==="Krank"?"Krank":effective.status==="Frei"?"Frei":effective.status==="Reserve"?"Reserve":effective.status==="Organisation"?"Organisation":"Individueller Dienst",current={kind:ov?.kind||derivedKind,duty_type:effective.dutyType||"",depot:effective.depot||"",start_time:parts.length===2?parts[0]:"",end_time:parts.length===2?parts[1]:"",note:effective.note||ov?.note||"",summary:(effective.segments||[]).map(x=>`${x.run} / ${x.vehicle}`).join(" · ")};return json({override:ov||null,current})}
- if(p==="/api/admin/override"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),date=String(b.date||""),emp2=EMP_BY_ID.get(eid);if(!emp2||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date))return json({error:"Mitarbeiter oder Datum ungültig."},400);if(b.action==="delete"){await env.DB.prepare(`DELETE FROM duty_overrides WHERE employee_id=? AND duty_date=?`).bind(eid,date).run();return json({ok:true,message:"Manuelle Änderung entfernt. Generierter Dienst gilt wieder."})}let kinds=["Urlaub","Krank","Frei","Reserve","Organisation","Fahrdienst","Individueller Dienst"],kind=kinds.includes(String(b.kind||""))?String(b.kind):"Individueller Dienst",dutyType=String(b.dutyType||kind),depot=String(b.depot||""),startTime=String(b.startTime||""),endTime=String(b.endTime||""),note=String(b.note||"").slice(0,1000),now=new Date().toISOString();if(kind==="Urlaub"){let cap=await vacationCapacityForRange(env,eid,date,date);if(!cap.ok)return json({error:cap.error},400)}if(kind==="Frei"&&!isAnnualFreeDay(emp2,parseDateKey(date)))return json({error:`Für ${date.slice(0,4)} sind pro Mitarbeiter genau ${ANNUAL_FREE_DAYS} planmäßige Frei-Tage vorgesehen. Dieser Tag gehört nicht zum Jahreskontingent.`},400);if(kind==="Reserve"){let reserveDepot=depot||"Betriebshof Mitte",reserveStart=startTime||"06:00",reserveEnd=endTime||"13:00",conflict=await reserveOverrideConflict(env,eid,date,reserveDepot,reserveStart,reserveEnd);if(conflict)return json({error:conflict.message},400);depot=reserveDepot;startTime=reserveStart;endTime=reserveEnd}if(startTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime))return json({error:"Startzeit ungültig."},400);if(endTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime))return json({error:"Endzeit ungültig."},400);await env.DB.prepare(`INSERT INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,duty_date) DO UPDATE SET kind=excluded.kind,duty_type=excluded.duty_type,depot=excluded.depot,start_time=excluded.start_time,end_time=excluded.end_time,note=excluded.note,created_by=excluded.created_by,updated_at=excluded.updated_at`).bind(eid,date,kind,dutyType,depot,startTime,endTime,note,su.username,now,now).run();return json({ok:true,message:`${emp2.name}: ${kind} für ${date} gespeichert.`})}
+ if(p==="/api/admin/override"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),date=String(b.date||""),emp2=EMP_BY_ID.get(eid);if(!emp2||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(date))return json({error:"Mitarbeiter oder Datum ungültig."},400);if(b.action==="delete"){await env.DB.prepare(`DELETE FROM duty_overrides WHERE employee_id=? AND duty_date=?`).bind(eid,date).run();return json({ok:true,message:"Manuelle Änderung entfernt. Generierter Dienst gilt wieder."})}let kinds=["Urlaub","Krank","Frei","Reserve","Organisation","Fahrdienst","Individueller Dienst"],kind=kinds.includes(String(b.kind||""))?String(b.kind):"Individueller Dienst",dutyType=String(b.dutyType||kind),depot=String(b.depot||""),startTime=String(b.startTime||""),endTime=String(b.endTime||""),note=String(b.note||"").slice(0,1000),now=new Date().toISOString();if(kind==="Urlaub"){let cap=await vacationCapacityForRange(env,eid,date,date);if(!cap.ok)return json({error:cap.error},400)}if(kind==="Reserve"){let reserveDepot=depot||"Betriebshof Mitte",reserveStart=startTime||"06:00",reserveEnd=endTime||"13:00",conflict=await reserveOverrideConflict(env,eid,date,reserveDepot,reserveStart,reserveEnd);if(conflict)return json({error:conflict.message},400);depot=reserveDepot;startTime=reserveStart;endTime=reserveEnd}if(startTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime))return json({error:"Startzeit ungültig."},400);if(endTime&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(endTime))return json({error:"Endzeit ungültig."},400);await env.DB.prepare(`INSERT INTO duty_overrides(employee_id,duty_date,kind,duty_type,depot,start_time,end_time,note,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(employee_id,duty_date) DO UPDATE SET kind=excluded.kind,duty_type=excluded.duty_type,depot=excluded.depot,start_time=excluded.start_time,end_time=excluded.end_time,note=excluded.note,created_by=excluded.created_by,updated_at=excluded.updated_at`).bind(eid,date,kind,dutyType,depot,startTime,endTime,note,su.username,now,now).run();return json({ok:true,message:`${emp2.name}: ${kind} für ${date} gespeichert.`})}
  if(p==="/api/admin/personnel-movements"&&req.method==="GET"){let now=berlinDateKey(),month=now.slice(0,7),items=[];for(const e of DATA.employees){let add=(type,date,position,detail)=>{if(date&&date.slice(0,7)===month)items.push({type,date,employeeId:e.id,name:e.name,position:position||e.position,detail})};if(e.startDate)add("Eintritt",e.startDate,e.position,e.apprenticeCohort?`Automatischer Ausbildungsbeginn · Jahrgang ${e.apprenticeCohort}`:"Eintritt");if(e.apprenticeCohort){for(let y=1;y<=2;y++){let dt=`${e.apprenticeCohort+y}-08-01`,type=`Wechsel ins ${y+1}. Lehrjahr`,detail=y===1?"Klasse D: zunächst Theorie/Schulungen, ab Januar Praxis; MPU und Prüfung automatisch eingeplant":"Selbstständiger Fahrdienst unter Ausbildungsstatus";add(type,dt,e.position,detail)}let gd=`${e.apprenticeCohort+3}-08-01`;add("Ausbildungsende",gd,"Busfahrer","Automatische Übernahme als festangestellte/r Busfahrer/in")}if(e.endDate)add(e.endReason==="Rente"?"Rente":"Austritt",e.endDate,e.position,e.endReason||"Austritt")}items.sort((a,b)=>a.date.localeCompare(b.date)||a.type.localeCompare(b.type)||a.name.localeCompare(b.name,"de"));return json({date:now,month,items,history:[],automation:{cohortSize:8,cohortStart:"01.08.",retirementAge:67}})}
  if(p==="/api/admin/hire"&&req.method==="POST"){let b=await req.json(),first=String(b.first||"").trim(),last=String(b.last||"").trim(),birth=String(b.birthDate||""),start=String(b.startDate||""),position=String(b.position||"").trim(),bereich=String(b.bereich||"").trim(),standort=String(b.standort||"Mitte").trim(),employment=String(b.employment||"Vollzeit").trim(),hours=Math.max(4,Math.min(48,Number(b.hours)||39)),trainee=!!b.trainee||/azubi|auszubild/i.test(position);if(!first||!last||!position||!bereich||!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(birth))return json({error:"Bitte Name, Geburtsdatum, Eintritt, Position und Bereich vollständig angeben."},400);let age=ageOnDate(birth,start);if(age===null)return json({error:"Geburtsdatum oder Eintrittsdatum ist ungültig."},400);if(trainee&&age<16)return json({error:"Auszubildende müssen zum Eintritt mindestens 16 Jahre alt sein."},400);let id=await nextEmployeeId(env),name=`${first} ${last}`,now=new Date().toISOString();await env.DB.prepare(`INSERT INTO employee_records(employee_id,first_name,last_name,name,position,business_area,location,employment,hours,birth_date,start_date,created_at,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).bind(id,first,last,name,position,bereich,standort,employment,hours,birth,start,now,su.username).run();await env.DB.prepare(`INSERT INTO employee_lifecycle(employee_id,birth_date,start_date,end_date,end_reason,updated_at,updated_by) VALUES(?,?,?,NULL,NULL,?,?)`).bind(id,birth,start,now,su.username).run();await hydrateEmployees(env,true);let empNew=EMP_BY_ID.get(id),username=await createInitialUserForEmployee(empNew,env);return json({ok:true,id,username,initialPassword:INIT_PASSWORD,message:`${name} wurde zum ${start} eingestellt. Login: ${username} · Erstpasswort ${INIT_PASSWORD}`})}
  if(p==="/api/admin/terminate"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),end=String(b.endDate||""),reason=String(b.reason||"Austritt").trim()||"Austritt",e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);if(!/^\d{4}-\d{2}-\d{2}$/.test(end))return json({error:"Bitte Austrittsdatum angeben."},400);if(e.startDate&&end<e.startDate)return json({error:"Austritt kann nicht vor dem Eintritt liegen."},400);let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO employee_lifecycle(employee_id,birth_date,start_date,end_date,end_reason,updated_at,updated_by) VALUES(?,?,?,?,?,?,?) ON CONFLICT(employee_id) DO UPDATE SET end_date=excluded.end_date,end_reason=excluded.end_reason,updated_at=excluded.updated_at,updated_by=excluded.updated_by`).bind(eid,e.birthDate||null,e.startDate||null,end,reason,now,su.username).run();e.endDate=end;e.endReason=reason;return json({ok:true,message:`Austritt von ${e.name} zum ${end} (${reason}) gespeichert. Ab dem Folgetag wird die Person nicht mehr eingeplant und der Login gesperrt.`})}
@@ -1639,4 +1621,21 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(p==="/api/admin/generate"&&req.method==="POST")return json({error:"Diese Seite verwendet noch die alte Ein-Request-Wochengenerierung. Bitte einmal vollständig neu laden; ab v6.4.39 läuft die Woche in 7 getrennten Worker-Schritten."},409);
  return json({error:"Nicht gefunden."},404)
 }
-export default{async fetch(req,env){try{return await route(req,env)}catch(e){console.error(e);return json({error:"Serverfehler: "+(e?.message||e)},500)}},async scheduled(controller,env,ctx){ctx.waitUntil((async()=>{await ensureSchemaOnce(env);await ensurePersonnelAutomation(env,true);try{await syncFleetFromGoogle(env)}catch(e){console.warn("Automatischer Fuhrpark-Sync fehlgeschlagen:",e?.message||e)}if(controller.cron==="0 16 * * fri"){let now=new Date(controller.scheduledTime),cur=mondayOf(now),next=addDays(cur,7);await ensureWeek(env,dateKey(next),"cron-friday",false)}await env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(new Date().toISOString()).run()})())}};
+export default{async fetch(req,env){try{return await route(req,env)}catch(e){console.error(e);return json({error:"Serverfehler: "+(e?.message||e)},500)}},async scheduled(controller,env,ctx){ctx.waitUntil((async()=>{
+ await ensureSchemaOnce(env);
+ const date=new Date(controller.scheduledTime),isWeekly=controller.cron==="0 16 * * fri";
+ // Bestehender 30-Minuten-Cron; Personalwartung nur 08:00 Uhr Europe/Berlin.
+ const dailyPersonnel=controller.cron==="*/30 * * * *"&&berlinMinuteOfDay(date)===480;
+ if(dailyPersonnel||isWeekly)await ensurePersonnelAutomation(env,true);
+ if(dailyPersonnel){
+  await resetStaffAbsencesForSimulation(env);
+  await ensureRandomStaffEvents(env,date);
+  await env.DB.prepare(`DELETE FROM sessions WHERE expires_at < ?`).bind(new Date().toISOString()).run();
+ }
+ if(isWeekly){
+  const cur=mondayOf(date),next=addDays(cur,7);
+  await ensureWeek(env,dateKey(next),"cron-friday",false);
+ }else if(!dailyPersonnel){
+  try{await syncFleetFromGoogle(env)}catch(e){console.warn("Automatischer Fuhrpark-Sync fehlgeschlagen:",e?.message||e)}
+ }
+})())}};
