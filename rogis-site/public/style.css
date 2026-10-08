@@ -283,3 +283,18 @@ details.detail-pop>:not(summary),details[open] .detail-content{animation:details
 @keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @media(max-width:780px){.hero-facts{grid-template-columns:1fr 1fr}.hero-facts>div:last-child{grid-column:1/-1}.hero-dots{left:18px;bottom:18px}.hero-slide .photo-caption{right:18px;bottom:18px}}
 @media(prefers-reduced-motion:reduce){.hero-slide,.hero-dot,.copy-swap #hero-eyebrow,.copy-swap #hero-title,.copy-swap #hero-copy,.copy-swap #hero-cta,.pagebody>.grid,.pagebody>.split,.pagebody>.details,.pagebody>.editorial{transition:none!important;animation:none!important}}
+
+
+/* High-resolution fleet presentation */
+.hero-slide img{object-fit:contain!important;object-position:center center;background:linear-gradient(135deg,#dfe6f1,#f5f7fb)}
+.fleet-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.fleet-grid .imagecard>img{width:100%;aspect-ratio:16/9;object-fit:contain!important;object-position:center;background:#eef2f7;padding:10px}
+.detailphoto{object-fit:contain!important;background:#eef2f7;border-radius:18px;max-height:none;aspect-ratio:16/9}
+.partner-grid{align-items:stretch}
+.partner-card{display:flex;flex-direction:column}
+.partner-card .partnerlogo{height:150px;padding:16px;background:#fff;border:1px solid #edf0f5;border-radius:14px}
+.partner-card .textlink{margin-top:auto}
+.detail-logo{height:170px;max-width:520px;object-position:left center;margin:0 0 32px}
+.depot-mini{margin-top:26px}
+@media(max-width:1000px){.fleet-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.fleet-grid{grid-template-columns:1fr}.hero-slide img{object-fit:contain!important}.partner-card .partnerlogo{height:120px}}
