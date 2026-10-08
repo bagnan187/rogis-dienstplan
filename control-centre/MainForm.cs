@@ -26,16 +26,18 @@ public sealed class MainForm : Form
     readonly System.Windows.Forms.Timer _liveAiTimer=new();
     bool _liveAiBusy;
     string? _lastLiveAiSignature;
+    int _lastLiveAiPlanVersion=-1;
+    int _lastLiveAiAssignmentCount;
     string? _lastLiveAiError;
 
     public MainForm()
     {
-        Text="ROGIS Control Centre v6.4.60";
+        Text="ROGIS Control Centre v6.4.72";
         Width=1250;Height=820;StartPosition=FormStartPosition.CenterScreen;
         _cfg=AppConfig.Load();
         BuildUi();
         LoadConfigToUi();
-        _liveAiTimer.Interval=Math.Max(3,_cfg.LiveAiSyncSeconds)*1000;
+        _liveAiTimer.Interval=Math.Max(15,_cfg.LiveAiSyncSeconds)*1000;
         _liveAiTimer.Tick+=async(_,__)=>await LiveAiTickAsync();
         _liveAi.CheckedChanged+=async(_,__)=>
         {
@@ -51,6 +53,8 @@ public sealed class MainForm : Form
         _date.ValueChanged+=async(_,__)=>
         {
             _lastLiveAiSignature=null;
+            _lastLiveAiPlanVersion=-1;
+            _lastLiveAiAssignmentCount=0;
             if(_liveAi.Checked)await LiveAiTickAsync(true);
         };
         Shown+=(_,__)=>{StartPluginListener();StartLiveAiSync();_=StartupRefreshAsync();};
@@ -143,8 +147,7 @@ public sealed class MainForm : Form
     void StartLiveAiSync()
     {
         _liveAiTimer.Start();
-        _liveAiStatus.Text=_liveAi.Checked?"Live KI-Sync: aktiv · prüft alle "+Math.Max(3,_cfg.LiveAiSyncSeconds)+" s":"Live KI-Sync: aus";
-        if(_liveAi.Checked)_=LiveAiTickAsync(true);
+        _liveAiStatus.Text=_liveAi.Checked?"Live KI-Sync: aktiv · Versionscheck alle "+Math.Max(15,_cfg.LiveAiSyncSeconds)+" s":"Live KI-Sync: aus";
     }
 
     static string AiSignature(AiDay ai) =>
@@ -159,22 +162,33 @@ public sealed class MainForm : Form
         try
         {
             using var api=new DienstplanApi(_cfg);
-            var ai=await api.GetAiDayAsync(_date.Value.Date);
+            var date=_date.Value.Date;
+            var state=await api.GetAiDayStateAsync(date);
+            var path=Path.Combine(MapDir(),"car_use",$"000_ROGIS_Dienstplan_{date:yyyyMMdd}.ocu");
+
+            // Normalbetrieb: nur ein winziger Versionscheck. Den vollständigen
+            // KI-Tagespayload laden wir ausschließlich bei einer neuen Planversion
+            // oder wenn die lokale OCU-Datei fehlt.
+            if(!force&&state.planVersion==_lastLiveAiPlanVersion&&File.Exists(path))
+            {
+                _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {state.planVersion} · {_lastLiveAiAssignmentCount} Umläufe";
+                _lastLiveAiError=null;
+                return;
+            }
+
+            var ai=await api.GetAiDayAsync(date);
             var sig=AiSignature(ai);
-            var path=Path.Combine(MapDir(),"car_use",$"000_ROGIS_Dienstplan_{ai.date.Replace("-","")}.ocu");
             if(force||!string.Equals(sig,_lastLiveAiSignature,StringComparison.Ordinal)||!File.Exists(path))
             {
                 var ocu=OcuGenerator.Write(_cfg,ai,Log);
                 _lastLiveAiSignature=sig;
-                _lastLiveAiError=null;
-                _liveAiStatus.Text=$"Live KI-Sync: aktiv · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
                 Log($"Live KI-Sync: Planversion {ai.planVersion} übernommen · {ai.assignmentCount} Wagen/Umläufe · {ocu}");
             }
-            else
-            {
-                _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
-                _lastLiveAiError=null;
-            }
+
+            _lastLiveAiPlanVersion=ai.planVersion;
+            _lastLiveAiAssignmentCount=ai.assignmentCount;
+            _lastLiveAiError=null;
+            _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
         }
         catch(Exception ex)
         {
@@ -248,6 +262,8 @@ public sealed class MainForm : Form
 
         var ocu=OcuGenerator.Write(_cfg,ai,Log);
         _lastLiveAiSignature=AiSignature(ai);
+        _lastLiveAiPlanVersion=ai.planVersion;
+        _lastLiveAiAssignmentCount=ai.assignmentCount;
         _liveAiStatus.Text=$"Live KI-Sync: aktuell · Plan {ai.planVersion} · {ai.assignmentCount} Umläufe";
 
         // Gewünschtes klassisches Verhalten: Busse wieder als ROGIS_RT-Objekte in die
