@@ -91,7 +91,33 @@ export function wirePublic(){
   $('#linetype')?.addEventListener('change',filterLines);
   filterLines();
 
-  $$('[data-line-toggle]').forEach(btn=>btn.addEventListener('click',()=>{
+  $('[data-aushang-download]').forEach(btn=>btn.addEventListener('click',async()=>{
+    const original=btn.querySelector('small')?.textContent||'Einzelnen Fahrplanaushang als PDF herunterladen';
+    btn.disabled=true;if(btn.querySelector('small'))btn.querySelector('small').textContent='PDF wird erstellt …';
+    try{
+      const [{PDFDocument},r]=await Promise.all([
+        import('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/+esm'),
+        fetch(btn.dataset.pdf,{cache:'force-cache'})
+      ]);
+      if(!r.ok)throw new Error('Aushang-PDF nicht gefunden');
+      const src=await PDFDocument.load(await r.arrayBuffer());
+      const out=await PDFDocument.create();
+      const [page]=await out.copyPages(src,[Math.max(0,Number(btn.dataset.page)-1)]);
+      out.addPage(page);
+      const bytes=await out.save({useObjectStreams:true});
+      const blob=new Blob([bytes],{type:'application/pdf'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+      a.href=url;a.download=(btn.dataset.filename||'ROGIS_Fahrplanaushang.pdf').replace(/[\\/:*?"<>|]+/g,'_');
+      document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),3000);
+      if(btn.querySelector('small'))btn.querySelector('small').textContent='PDF heruntergeladen';
+      setTimeout(()=>{if(btn.querySelector('small'))btn.querySelector('small').textContent=original},1600);
+    }catch(e){
+      console.error(e);
+      if(btn.querySelector('small'))btn.querySelector('small').textContent='Download nicht möglich – Gesamt-PDF öffnen';
+      setTimeout(()=>window.open(btn.dataset.pdf+'#page='+btn.dataset.page,'_blank','noopener'),300);
+    }finally{btn.disabled=false}
+  }));
+
+  $('[data-line-toggle]').forEach(btn=>btn.addEventListener('click',()=>{
     const card=btn.closest('[data-line-card]'),panel=card?.querySelector('.line-expand');
     if(!card||!panel)return;
     const open=card.classList.toggle('is-open');
