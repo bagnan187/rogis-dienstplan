@@ -1305,17 +1305,10 @@ async function openOmsiDayPayloadLiteV6470(env,mondayKey,date){
    });
  }
  assignments.sort((a,b)=>a.tour.localeCompare(b.tour,"de",{numeric:true,sensitivity:"base"}));
- const slotRows=await env.DB.prepare(`
-   SELECT vehicle_number vehicleNumber,used,start_depot startDepot,start_slot startSlot,end_depot endDepot,end_slot endSlot,
-          end_slot returnSlot,slot_type slotType,pullout_min pulloutMin,pullin_min pullinMin
-   FROM plan_day_depot
-   WHERE monday=? AND plan_version=? AND duty_date=?
-   ORDER BY CAST(vehicle_number AS INTEGER),vehicle_number
- `).bind(mondayKey,cache.version,date).all();
  return{
    ok:true,date,dayType:dt,timetableLine,planVersion:cache.version,
-   assignmentCount:assignments.length,assignments,slotPlan:slotRows.results||[],
-   note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. Live-KI liest den materialisierten Tagescache; TL/GR-Fremdleistungen werden nicht überschrieben."
+   assignmentCount:assignments.length,assignments,
+   note:"Nur ROGIS-Umläufe mit fest disponierter Wagennummer. Live-KI liest ausschließlich die materialisierten Tagessegmente; Depot-/Stellplatzdaten werden hier bewusst nicht übertragen."
  };
 }
 
@@ -1373,7 +1366,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.70",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.71",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
