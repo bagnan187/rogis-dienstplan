@@ -40,6 +40,43 @@ export function wirePublic(){
     }
   });
 
+  const heroRoot=$('[data-hero]');
+  if(heroRoot&&(data.hero||[]).length){
+    const items=data.hero,slides=$$('[data-hero-slide]'),dots=$$('[data-hero-dot]');
+    const eyebrow=$('#hero-eyebrow'),title=$('#hero-title'),copy=$('#hero-text'),cta=$('#hero-cta'),copyBox=heroRoot.querySelector('[data-hero-copy]');
+    let current=0,timer=null,locked=false;
+    const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const apply=i=>{
+      if(locked||i===current&&slides[current]?.classList.contains('is-active'))return;
+      locked=true;
+      const next=(i+items.length)%items.length,item=items[next];
+      copyBox?.classList.add('is-changing');
+      setTimeout(()=>{
+        eyebrow.textContent=item.eyebrow;
+        title.innerHTML=`${esc(item.title[0])}<br>${esc(item.title[1])}<br><em>${esc(item.title[2])}</em>`;
+        copy.textContent=item.copy;
+        cta.textContent=item.cta;
+        cta.href=item.href;
+        slides.forEach((el,n)=>el.classList.toggle('is-active',n===next));
+        dots.forEach((el,n)=>el.classList.toggle('is-active',n===next));
+        copyBox?.classList.remove('is-changing');
+        current=next;
+        setTimeout(()=>locked=false,reduce?0:420);
+      },reduce?0:180);
+    };
+    const stop=()=>{if(timer){clearInterval(timer);timer=null}};
+    const start=()=>{if(!reduce&&!timer)timer=setInterval(()=>apply(current+1),5600)};
+    $('[data-hero-prev]')?.addEventListener('click',()=>{stop();apply(current-1);start()});
+    $('[data-hero-next]')?.addEventListener('click',()=>{stop();apply(current+1);start()});
+    dots.forEach((b,i)=>b.addEventListener('click',()=>{stop();apply(i);start()}));
+    heroRoot.addEventListener('mouseenter',stop);
+    heroRoot.addEventListener('mouseleave',start);
+    heroRoot.addEventListener('focusin',stop);
+    heroRoot.addEventListener('focusout',start);
+    document.addEventListener('visibilitychange',()=>document.hidden?stop():start());
+    start();
+  }
+
   $$('.public-form').forEach(f=>f.addEventListener('submit',async e=>{
     e.preventDefault();
     const b=f.querySelector('button'),m=f.querySelector('.feedback');
@@ -49,7 +86,7 @@ export function wirePublic(){
       const j=await r.json();
       if(!r.ok)throw Error(j.error||'Anfrage konnte nicht gesendet werden.');
       f.reset();m.className='feedback';
-      m.textContent=`Vielen Dank. Ihre Anfrage R-${String(j.id).padStart(5,'0')} wurde an Emil Breitbau weitergeleitet.`;
+      m.textContent=`Vielen Dank. Ihre Anfrage R-${String(j.id).padStart(5,'0')} wurde erfolgreich erfasst.`;
     }catch(x){m.className='feedback error';m.textContent=x.message}
     finally{b.disabled=false}
   }));
@@ -83,7 +120,8 @@ export function wirePublic(){
     $$('#stops tr').forEach(x=>x.hidden=!x.textContent.toLocaleLowerCase('de').includes(q));
   });
 
-  $$('details').forEach(d=>d.addEventListener('toggle',()=>{
+  $('details').forEach(d=>d.addEventListener('toggle',()=>{
+    d.classList.toggle('is-open',d.open);
     if(d.open){d.classList.remove('detail-pop');requestAnimationFrame(()=>d.classList.add('detail-pop'))}
   }));
 
