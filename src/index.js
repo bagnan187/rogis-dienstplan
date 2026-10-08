@@ -1366,7 +1366,15 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.71",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.72",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/openomsi/day-state"&&req.method==="GET"){
+   const date=String(url.searchParams.get("date")||berlinDateKey());
+   if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
+   const mk=dateKey(mondayOf(parseDateKey(date)));
+   const r=await env.DB.prepare(`SELECT version,generated_at FROM week_plans WHERE monday=?`).bind(mk).first();
+   if(!r)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);
+   return json({ok:true,date,planVersion:Number(r.version||0),generatedAt:r.generated_at||null},200,{"cache-control":"no-store"});
+ }
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
