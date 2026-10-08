@@ -711,12 +711,32 @@ async function getEmployeeGenerationSettings(env,eid){let r=await env.DB.prepare
 function planCfgForEmployee(plan,eid,d=null){let raw=plan.employeeSettings?.[eid]||null,cfg=d?employeeCfgForDate(raw,d):(raw?{...UNLIMITED_EMPLOYEE_SETTINGS,...normalizeEmployeeGenerationSettings(raw),_custom:true}:{...UNLIMITED_EMPLOYEE_SETTINGS});return{...cfg,_seed:plan.employeeSeeds?.[eid]||plan.seed||""}}
 function dutyMetrics(segs=[]){if(!segs.length)return{start:null,end:null,drive:0,span:0,count:0};let a=[...segs].sort((x,y)=>x.start-y.start),start=a[0].start,end=Math.max(...a.map(x=>x.end)),drive=a.reduce((n,x)=>n+effectiveDriveMinutes(x),0);return{start,end,drive,span:end-start,count:a.length}}
 function dutyFitsCriteria(segs,cfg){if(!segs?.length)return true;let m=dutyMetrics(segs);if(m.span>HARD_MAX_DUTY_SPAN_MINUTES||segs.some(s=>s.end-s.start>HARD_MAX_SINGLE_BLOCK_MINUTES))return false;let a=[...segs].sort((x,y)=>x.start-y.start),gaps=a.slice(1).map((x,i)=>x.start-a[i].end);if(gaps.some(g=>g>SPLIT_BREAK_MAX_MINUTES))return false;if(m.span>NORMAL_MAX_DUTY_SPAN_MINUTES){let hasSplit=gaps.some(g=>g>=SPLIT_BREAK_MIN_MINUTES&&g<=SPLIT_BREAK_MAX_MINUTES);if(!hasSplit)return false}if(!cfg?._custom)return true;if(!cfg._ignoreTimeWindow){if(cfg.earliestDutyStart&&((m.start%1440)+1440)%1440<timeToMin(cfg.earliestDutyStart,0))return false;if(cfg.latestDutyStart&&((m.start%1440)+1440)%1440>timeToMin(cfg.latestDutyStart,1439))return false;if(cfg.latestDutyEnd&&m.end>latestEndDeadline(m.start,timeToMin(cfg.latestDutyEnd,1439)))return false}if(cfg.maxDriveMinutes!=null&&m.drive>cfg.maxDriveMinutes)return false;if(cfg.maxDutySpanMinutes!=null&&m.span>cfg.maxDutySpanMinutes)return false;if(cfg.maxSegments!=null&&m.count>cfg.maxSegments)return false;return true}
+function hasPersonalDutyLimits(cfg){
+ if(!cfg?._custom)return false;
+ return !!(
+   cfg.earliestDutyStart||
+   cfg.latestDutyStart||
+   cfg.latestDutyEnd||
+   cfg.maxDriveMinutes!=null||
+   cfg.maxDutySpanMinutes!=null||
+   cfg.maxSegments!=null
+ );
+}
 function dutyFitsPersonalCriteria(segs,cfg){
- // Für Tausch-/Individualfunktionen gilt: Ohne ausdrücklich gespeicherte
- // persönliche Kriterien gibt es hier keine zusätzliche personenspezifische Sperre.
- // Allgemeine Generierungsgrenzen werden weiterhin bei der Planerzeugung geprüft.
- if(!cfg?._custom)return true;
- return dutyFitsCriteria(segs,cfg);
+ // Beim manuellen Tausch werden ausschließlich tatsächlich gesetzte persönliche
+ // Grenzen geprüft. Zielwerte/Pausen-Feintuning und allgemeine Planungsgrenzen
+ // dürfen nicht fälschlich als "hinterlegte Arbeitszeitkriterien" erscheinen.
+ if(!segs?.length||!hasPersonalDutyLimits(cfg))return true;
+ const m=dutyMetrics(segs);
+ if(!cfg._ignoreTimeWindow){
+   if(cfg.earliestDutyStart&&((m.start%1440)+1440)%1440<timeToMin(cfg.earliestDutyStart,0))return false;
+   if(cfg.latestDutyStart&&((m.start%1440)+1440)%1440>timeToMin(cfg.latestDutyStart,1439))return false;
+   if(cfg.latestDutyEnd&&m.end>latestEndDeadline(m.start,timeToMin(cfg.latestDutyEnd,1439)))return false;
+ }
+ if(cfg.maxDriveMinutes!=null&&m.drive>cfg.maxDriveMinutes)return false;
+ if(cfg.maxDutySpanMinutes!=null&&m.span>cfg.maxDutySpanMinutes)return false;
+ if(cfg.maxSegments!=null&&m.count>cfg.maxSegments)return false;
+ return true;
 }
 function reassignSegments(segs,emp){return(segs||[]).map(x=>({...x,employeeId:emp.id,employeeName:emp.name}))}
 
@@ -848,9 +868,15 @@ async function swapSpecificEmployeeDutiesForDay(env,base,eidA,eidB,dateKeyValue,
    if(!bothLeaders)throw new Error("Mindestens einer der Dienste ist ein geschützter Sonder-/Fremdleistungsdienst und darf zwischen diesen Personen nicht direkt getauscht werden.");
  }
 
- const cfgA=planCfgForEmployee(plan,eidA,dd),cfgB=planCfgForEmployee(plan,eidB,dd);
- if(!dutyFitsPersonalCriteria(dutyB,cfgA))throw new Error(`${empB.name}s Dienst passt nicht zu den hinterlegten Arbeitszeitkriterien von ${empA.name}.`);
- if(!dutyFitsPersonalCriteria(dutyA,cfgB))throw new Error(`${empA.name}s Dienst passt nicht zu den hinterlegten Arbeitszeitkriterien von ${empB.name}.`);
+ const [egsA,egsB]=await Promise.all([getEmployeeGenerationSettings(env,eidA),getEmployeeGenerationSettings(env,eidB)]);
+ const cfgA=employeeCfgForDate(egsA.custom?egsA.settings:null,dd),cfgB=employeeCfgForDate(egsB.custom?egsB.settings:null,dd);
+ // Wichtig: Für einen manuellen Tausch zählen die aktuell gespeicherten Kriterien,
+ // nicht der möglicherweise ältere Snapshot aus der aktiven Wochenplanversion.
+ if(!dutyFitsPersonalCriteria(dutyB,cfgA))throw new Error(`${empB.name}s Dienst passt nicht zu den aktuell hinterlegten Arbeitszeitkriterien von ${empA.name}.`);
+ if(!dutyFitsPersonalCriteria(dutyA,cfgB))throw new Error(`${empA.name}s Dienst passt nicht zu den aktuell hinterlegten Arbeitszeitkriterien von ${empB.name}.`);
+ plan.employeeSettings={...(plan.employeeSettings||{})};
+ if(egsA.custom)plan.employeeSettings[eidA]=egsA.settings;else delete plan.employeeSettings[eidA];
+ if(egsB.custom)plan.employeeSettings[eidB]=egsB.settings;else delete plan.employeeSettings[eidB];
  if(!youthWorkWindowAllows(empA,dutyB,dd)||!youthWorkWindowAllows(empB,dutyA,dd))throw new Error("Der Tausch würde bei einer minderjährigen Person das zulässige Arbeitszeitfenster verletzen.");
 
  const beforeA=swapDutySummary(dutyA),beforeB=swapDutySummary(dutyB);
@@ -1373,7 +1399,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.73",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.74",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/openomsi/day-state"&&req.method==="GET"){
    const date=String(url.searchParams.get("date")||berlinDateKey());
    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
