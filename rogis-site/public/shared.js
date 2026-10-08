@@ -43,7 +43,7 @@ export function wirePublic(){
     }
   });
 
-  $$('.public-form').forEach(f=>f.addEventListener('submit',async e=>{
+  $$$('.public-form').forEach(f=>f.addEventListener('submit',async e=>{
     e.preventDefault();
     const b=f.querySelector('button'),m=f.querySelector('.feedback');
     b.disabled=true;
@@ -81,7 +81,7 @@ export function wirePublic(){
     const q=$('#lineq').value.toLocaleLowerCase('de').trim();
     const type=$('#linetype')?.value||'all';
     let shown=0;
-    $$('[data-line-card]').forEach(card=>{
+    $$$('[data-line-card]').forEach(card=>{
       const hit=(!q||card.textContent.toLocaleLowerCase('de').includes(q))&&(type==='all'||card.dataset.kind===type);
       card.hidden=!hit;if(hit)shown++;
     });
@@ -91,7 +91,7 @@ export function wirePublic(){
   $('#linetype')?.addEventListener('change',filterLines);
   filterLines();
 
-  $('[data-aushang-download]').forEach(btn=>btn.addEventListener('click',async()=>{
+  $$('[data-aushang-download]').forEach(btn=>btn.addEventListener('click',async()=>{
     const original=btn.querySelector('small')?.textContent||'Einzelnen Fahrplanaushang als PDF herunterladen';
     btn.disabled=true;if(btn.querySelector('small'))btn.querySelector('small').textContent='PDF wird erstellt …';
     try{
@@ -117,21 +117,21 @@ export function wirePublic(){
     }finally{btn.disabled=false}
   }));
 
-  $('[data-line-toggle]').forEach(btn=>btn.addEventListener('click',()=>{
+  $$('[data-line-toggle]').forEach(btn=>btn.addEventListener('click',()=>{
     const card=btn.closest('[data-line-card]'),panel=card?.querySelector('.line-expand');
     if(!card||!panel)return;
     const open=card.classList.toggle('is-open');
     btn.setAttribute('aria-expanded',String(open));
     panel.style.maxHeight=open?panel.scrollHeight+'px':'0px';
   }));
-  addEventListener('resize',()=>$$('[data-line-card].is-open .line-expand').forEach(p=>p.style.maxHeight=p.scrollHeight+'px'));
+  addEventListener('resize',()=>$$$('[data-line-card].is-open .line-expand').forEach(p=>p.style.maxHeight=p.scrollHeight+'px'));
 
   $('#stopq')?.addEventListener('input',e=>{
     const q=e.target.value.toLocaleLowerCase('de');
-    $$('#stops tr').forEach(x=>x.hidden=!x.textContent.toLocaleLowerCase('de').includes(q));
+    $$$('#stops tr').forEach(x=>x.hidden=!x.textContent.toLocaleLowerCase('de').includes(q));
   });
 
-  $$('details').forEach(d=>d.addEventListener('toggle',()=>{
+  $$$('details').forEach(d=>d.addEventListener('toggle',()=>{
     d.classList.toggle('is-open',d.open);
     if(d.open){d.classList.remove('detail-pop');requestAnimationFrame(()=>d.classList.add('detail-pop'))}
   }));
@@ -140,7 +140,7 @@ export function wirePublic(){
     const io=new IntersectionObserver(entries=>entries.forEach(x=>{
       if(x.isIntersecting){x.target.classList.add('is-visible');io.unobserve(x.target)}
     }),{threshold:.08,rootMargin:'0px 0px -24px'});
-    $$('.card,.line-overview,.editorial,.kpi,.info-line').forEach((el,i)=>{
+    $$$('.card,.line-overview,.editorial,.kpi,.info-line').forEach((el,i)=>{
       el.classList.add('reveal');el.style.setProperty('--reveal-delay',Math.min(i%6,5)*45+'ms');io.observe(el);
     });
   }
