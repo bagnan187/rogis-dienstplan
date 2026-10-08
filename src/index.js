@@ -1028,40 +1028,88 @@ async function vehicleDayRows(plan,date,q,env){
  return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed,previewMode,missingVehicleAssignments:missingActiveVehicleAssignments,planVersion:Number(plan?.version||0)}
 }
 async function vehicleDayRowsLite(env,mondayKey,date,q){
- const dayPath=`$."days"."${date}"`;
- const row=await env.DB.prepare(`SELECT version,json_extract(plan_json,?) day_json,json_extract(plan_json,'$.depotPreview') root_preview FROM week_plans WHERE monday=?`).bind(dayPath,mondayKey).first();
- if(!row||!row.day_json)return null;
- const day=parseJsonCell(row.day_json,{});
+ const assignmentsPath=`$."days"."${date}"."assignments"`;
+ const depotPath=`$."days"."${date}"."depotSlots"`;
+ const dayPreviewPath=`$."days"."${date}"."depotPreview"`;
  const qq=String(q||"").trim().toLowerCase();
- const [fleetRaw,slots,ovRows]=await Promise.all([
-   loadFleetFromDb(env),
-   loadDepotSlots(env),
+
+ // Wichtig für Cloudflare: Kein plan_json und kein Tages-JSON gelangt mehr in JavaScript.
+ // SQLite/D1 extrahiert ausschließlich die kleinen Felder, die die Wageneinsatz-Tabelle benötigt.
+ const [meta,segRes,depotRes,fleetRes,slotRes,ovRes]=await Promise.all([
+   env.DB.prepare(`SELECT version,json_extract(plan_json,'$.depotPreview') root_preview,json_extract(plan_json,?) day_preview FROM week_plans WHERE monday=?`).bind(dayPreviewPath,mondayKey).first(),
+   env.DB.prepare(`
+     SELECT
+       a.key employee_id,
+       json_extract(s.value,'$.employeeName') employee_name,
+       json_extract(s.value,'$.employeeId') segment_employee_id,
+       json_extract(s.value,'$.vehicle') vehicle,
+       json_extract(s.value,'$.vehicleModel') vehicle_model,
+       json_extract(s.value,'$.run') run,
+       json_extract(s.value,'$.start') start_min,
+       json_extract(s.value,'$.end') end_min,
+       json_extract(s.value,'$.startLoc') start_loc,
+       json_extract(s.value,'$.endLoc') end_loc,
+       json_extract(s.value,'$.lines') lines_json
+     FROM week_plans wp,
+          json_each(json_extract(wp.plan_json, ?)) a,
+          json_each(a.value) s
+     WHERE wp.monday=?
+       AND COALESCE(json_extract(s.value,'$.trainingRide'),0)=0
+       AND COALESCE(json_extract(s.value,'$.manualVehicle'),0)=0
+       AND COALESCE(json_extract(s.value,'$.vehicle'),'')<>''
+       AND json_extract(s.value,'$.vehicle')<>'KOM offen'
+       AND lower(COALESCE(json_extract(s.value,'$.vehicle'),'')) NOT LIKE '%manuell nachtragen%'
+   `).bind(assignmentsPath,mondayKey).all(),
+   env.DB.prepare(`
+     SELECT
+       COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) vehicle_number,
+       json_extract(d.value,'$.used') used,
+       json_extract(d.value,'$.startDepot') start_depot,
+       json_extract(d.value,'$.startSlot') start_slot,
+       json_extract(d.value,'$.endDepot') end_depot,
+       COALESCE(json_extract(d.value,'$.endSlot'),json_extract(d.value,'$.returnSlot')) end_slot,
+       json_extract(d.value,'$.slotType') slot_type,
+       json_extract(d.value,'$.pulloutMin') pullout_min,
+       json_extract(d.value,'$.pullinMin') pullin_min
+     FROM week_plans wp,
+          json_each(json_extract(wp.plan_json, ?)) d
+     WHERE wp.monday=?
+   `).bind(depotPath,mondayKey).all(),
+   env.DB.prepare(`SELECT number,label,model,status,regular FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb' ORDER BY number`).all(),
+   env.DB.prepare(`SELECT depot,COUNT(*) slot_count FROM depot_slots WHERE active=1 GROUP BY depot`).all(),
    env.DB.prepare(`SELECT employee_id FROM duty_overrides WHERE duty_date=?`).bind(date).all()
  ]);
- const fleet=fleetRaw.filter(v=>v.regular||String(v.status||"").trim().toLowerCase()==="im betrieb");
- const overridden=new Set((ovRows.results||[]).map(x=>String(x.employee_id)));
+ if(!meta)return null;
+
+ let fleet=(fleetRes.results||[]).map(v=>({number:Number(v.number),label:v.label||`KOM ${v.number}`,model:v.model||"",status:v.status||"",regular:!!v.regular}));
+ if(!fleet.length)fleet=(DATA.fleet||[]).filter(v=>v.regular&&Number(v.number)!==1603);
+ const overridden=new Set((ovRes.results||[]).map(x=>String(x.employee_id)));
  const byVehicle=new Map();
  for(const v of fleet){
    const key=String(v.label||`KOM ${v.number}`);
    byVehicle.set(key,{vehicle:key,model:v.model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]});
  }
- for(const [eid,segs] of Object.entries(day.assignments||{})){
-   if(overridden.has(String(eid)))continue;
-   for(const seg of segs||[]){
-     if(seg?.trainingRide||seg?.manualVehicle||!seg?.vehicle||seg.vehicle==="KOM offen"||/manuell nachtragen/i.test(String(seg.vehicle)))continue;
-     const key=String(seg.vehicle),rowV=byVehicle.get(key)||{vehicle:key,model:seg.vehicleModel||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]};
-     rowV.used=true;if(!rowV.model)rowV.model=seg.vehicleModel||"";
-     const run=String(seg.run||"").trim();if(run&&!rowV.runs.includes(run))rowV.runs.push(run);
-     const st=seg.startTime||minToTime(Number(seg.start||0)),et=seg.endTime||minToTime(Number(seg.end||0));
-     const startLoc=renameStop(seg.startLoc||""),endLoc=renameStop(seg.endLoc||"");
-     const driverName=String(seg.employeeName||EMP_BY_ID.get(String(eid))?.name||String(eid));
-     rowV.drivers.push({name:driverName,employeeId:String(seg.employeeId||eid),startTime:st,endTime:et,startLoc,endLoc,run,lines:seg.lines||[]});
-     if(!rowV.startTime||st<rowV.startTime){rowV.startTime=st;rowV.startLoc=startLoc}
-     if(!rowV.endTime||et>rowV.endTime){rowV.endTime=et;rowV.endLoc=endLoc}
-     for(const line of seg.lines||[])if(line&&!rowV.lines.includes(line))rowV.lines.push(line);
-     byVehicle.set(key,rowV);
-   }
+
+ for(const seg of segRes.results||[]){
+   const eid=String(seg.employee_id||seg.segment_employee_id||"");
+   if(overridden.has(eid))continue;
+   const key=String(seg.vehicle||"");
+   if(!key)continue;
+   const rowV=byVehicle.get(key)||{vehicle:key,model:seg.vehicle_model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]};
+   rowV.used=true;if(!rowV.model)rowV.model=seg.vehicle_model||"";
+   const run=String(seg.run||"").trim();if(run&&!rowV.runs.includes(run))rowV.runs.push(run);
+   const startMin=Number(seg.start_min),endMin=Number(seg.end_min);
+   const st=Number.isFinite(startMin)?minToTime(startMin):"",et=Number.isFinite(endMin)?minToTime(endMin):"";
+   const startLoc=renameStop(seg.start_loc||""),endLoc=renameStop(seg.end_loc||"");
+   let lines=[];try{lines=JSON.parse(seg.lines_json||"[]")||[]}catch{}
+   const driverName=String(seg.employee_name||EMP_BY_ID.get(eid)?.name||eid);
+   rowV.drivers.push({name:driverName,employeeId:eid,startTime:st,endTime:et,startLoc,endLoc,run,lines});
+   if(!rowV.startTime||(st&&st<rowV.startTime)){rowV.startTime=st;rowV.startLoc=startLoc}
+   if(!rowV.endTime||(et&&et>rowV.endTime)){rowV.endTime=et;rowV.endLoc=endLoc}
+   for(const line of lines)if(line&&!rowV.lines.includes(line))rowV.lines.push(line);
+   byVehicle.set(key,rowV);
  }
+
  const rows=[...byVehicle.values()];
  for(const rowV of rows){
    rowV.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));
@@ -1069,15 +1117,21 @@ async function vehicleDayRowsLite(env,mondayKey,date,q){
    for(const x of rowV.drivers){const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))continue;seen.add(k);ded.push(x)}
    rowV.drivers=ded;rowV.runs=[...new Set(rowV.runs)];rowV.lines=[...new Set(rowV.lines)];
  }
- const depotAssignments=new Map(Object.values(day.depotSlots||{}).map(a=>[String(a.vehicleNumber),a]));
+
+ const depotAssignments=new Map();
+ for(const a of depotRes.results||[])depotAssignments.set(String(a.vehicle_number),{
+   vehicleNumber:String(a.vehicle_number),used:!!a.used,startDepot:a.start_depot||"",startSlot:a.start_slot||"",
+   endDepot:a.end_depot||"",endSlot:a.end_slot||"",returnSlot:a.end_slot||"",slotType:a.slot_type||"",
+   pulloutMin:Number.isFinite(Number(a.pullout_min))?Number(a.pullout_min):null,
+   pullinMin:Number.isFinite(Number(a.pullin_min))?Number(a.pullin_min):null
+ });
  const activeVehicleNumbers=new Set(fleet.map(v=>String(v.number)));
  for(const rowV of rows){
    const vn=String((String(rowV.vehicle).match(/\d+/)||[""])[0]),a=depotAssignments.get(vn);
    if(!a)continue;
-   rowV.startDepot=a.startDepot||"";rowV.startSlot=a.startSlot||"";rowV.endDepot=a.endDepot||"";rowV.endSlot=a.endSlot||a.returnSlot||"";rowV.returnSlot=rowV.endSlot;rowV.slotType=a.slotType||"";
-   rowV.pulloutMin=Number.isFinite(Number(a.pulloutMin))?Number(a.pulloutMin):null;
-   rowV.pullinMin=Number.isFinite(Number(a.pullinMin))?Number(a.pullinMin):null;
+   rowV.startDepot=a.startDepot;rowV.startSlot=a.startSlot;rowV.endDepot=a.endDepot;rowV.endSlot=a.endSlot;rowV.returnSlot=a.returnSlot;rowV.slotType=a.slotType;rowV.pulloutMin=a.pulloutMin;rowV.pullinMin=a.pullinMin;
  }
+
  const today=berlinDateKey(),nowMin=berlinMinuteOfDay();
  for(const rowV of rows){
    if(!rowV.startSlot&&!rowV.endSlot){rowV.locationStatus="Stellplatz noch nicht geplant";rowV.currentSlot="";rowV.currentDepot="";continue}
@@ -1089,13 +1143,27 @@ async function vehicleDayRowsLite(env,mondayKey,date,q){
    else if(nowMin>=inn){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.endSlot||rowV.returnSlot||"";rowV.currentDepot=rowV.endDepot||""}
    else{rowV.locationStatus="Unterwegs";rowV.currentSlot="";rowV.currentDepot=""}
  }
+
  const filtered=rows.filter(rowV=>{if(!qq)return true;const hay=[rowV.vehicle,rowV.model,rowV.used?"im einsatz":"nicht eingesetzt",rowV.runs.join(" "),rowV.startTime,rowV.endTime,rowV.startLoc,rowV.endLoc,rowV.startSlot,rowV.endSlot,rowV.startDepot,rowV.endDepot,rowV.currentSlot,rowV.currentDepot,rowV.locationStatus,rowV.lines.join(" "),...rowV.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
  filtered.sort((a,b)=>{const an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
- const rr=depotReservationsForDay(day),occupancy={};
- for(const depot of ["Betriebshof Mitte","Betriebshof Spryndorf","Betriebshof Hechem"])occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slots.filter(x=>x.depot===depot).length};
+
+ const slotsByDepot={"Betriebshof Mitte":0,"Betriebshof Spryndorf":0,"Betriebshof Hechem":0};
+ for(const s of slotRes.results||[]){const depot=slotDepotName(s.depot);slotsByDepot[depot]=(slotsByDepot[depot]||0)+Number(s.slot_count||0)}
+ const occupancy={};
+ for(const depot of Object.keys(slotsByDepot))occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slotsByDepot[depot]};
  const missing=[...activeVehicleNumbers].filter(vn=>{const a=depotAssignments.get(vn);return !a||!String(a.startSlot||"").trim()||!String(a.endSlot||a.returnSlot||"").trim()}).map(Number).filter(Boolean);
- const previewMode=!!row.root_preview||!!day.depotPreview;
- return{date,rows:filtered,usedVehicles:rows.filter(r=>r.used).length,activeVehicles:rows.length,notUsedVehicles:rows.filter(r=>!r.used).length,depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,previewMode,missingVehicleAssignments:missing,planVersion:Number(row.version||0)};
+ const previewMode=!!meta.root_preview||!!meta.day_preview;
+ return{
+   date,rows:filtered,
+   usedVehicles:rows.filter(r=>r.used).length,
+   activeVehicles:rows.length,
+   notUsedVehicles:rows.filter(r=>!r.used).length,
+   depotOccupancy:occupancy,
+   slotCount:Object.values(slotsByDepot).reduce((n,x)=>n+Number(x||0),0),
+   slotReservations:{},slotConflicts:[],
+   depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,
+   previewMode,missingVehicleAssignments:missing,planVersion:Number(meta.version||0)
+ };
 }
 
 const ANNUAL_VACATION_DAYS=30;
@@ -1223,7 +1291,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.66",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.67",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
