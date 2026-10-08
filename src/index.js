@@ -869,11 +869,11 @@ async function swapSpecificEmployeeDutiesForDay(env,base,eidA,eidB,dateKeyValue,
  }
 
  const [egsA,egsB]=await Promise.all([getEmployeeGenerationSettings(env,eidA),getEmployeeGenerationSettings(env,eidB)]);
- const cfgA=employeeCfgForDate(egsA.custom?egsA.settings:null,dd),cfgB=employeeCfgForDate(egsB.custom?egsB.settings:null,dd);
- // Wichtig: Für einen manuellen Tausch zählen die aktuell gespeicherten Kriterien,
- // nicht der möglicherweise ältere Snapshot aus der aktiven Wochenplanversion.
- if(!dutyFitsPersonalCriteria(dutyB,cfgA))throw new Error(`${empB.name}s Dienst passt nicht zu den aktuell hinterlegten Arbeitszeitkriterien von ${empA.name}.`);
- if(!dutyFitsPersonalCriteria(dutyA,cfgB))throw new Error(`${empA.name}s Dienst passt nicht zu den aktuell hinterlegten Arbeitszeitkriterien von ${empB.name}.`);
+ // Ein ausdrücklich ausgelöster Admin-Diensttausch ist eine manuelle Disposition.
+ // Persönliche Generierungskriterien sind Präferenzen/Grenzen für automatische
+ // Neuverteilung und dürfen diesen manuellen Tausch nicht blockieren.
+ // Harte Schutzregeln (Beschäftigungsstatus, Abwesenheiten, Azubi/Jugendschutz,
+ // geschützte Sonderdienste) werden ober-/unterhalb weiterhin geprüft.
  plan.employeeSettings={...(plan.employeeSettings||{})};
  if(egsA.custom)plan.employeeSettings[eidA]=egsA.settings;else delete plan.employeeSettings[eidA];
  if(egsB.custom)plan.employeeSettings[eidB]=egsB.settings;else delete plan.employeeSettings[eidB];
@@ -1399,7 +1399,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.74",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.75",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/openomsi/day-state"&&req.method==="GET"){
    const date=String(url.searchParams.get("date")||berlinDateKey());
    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
