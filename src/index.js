@@ -235,7 +235,7 @@ function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=emp
  }
  if(ay===1){let rot=firstYearRotation(emp,d);return{status:"Ausbildung",dutyType:"1. Lehrjahr · "+rot,depot:rot.includes("Fahrschule")||rot.includes("Fahrdienst")?"Betriebshof Mitte":emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
  if(ay===2&&!segs.length){let ts=apprenticeTrainingState(emp,d);if(ts.phase==="MPU / Eignungsuntersuchung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · MPU / Eignungsuntersuchung",depot:"Betriebshof Mitte",serviceTime:"08:00-12:00",segments:[]};if(ts.phase==="Klasse D · Theorie / Schulungen")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Theorie / Schulungen",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};if(ts.phase==="Klasse D · Prüfung")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Prüfung",depot:"Betriebshof Mitte",serviceTime:"08:00-14:00",segments:[]};if(ts.phase==="Klasse D · Praxis / Begleitfahrten")return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D Praxis / Fahrschule",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]};return{status:"Ausbildung",dutyType:"2. Lehrjahr · Klasse D bestanden / Fahrdienstreserve",depot:emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}
- if(segs.length){let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end)),decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));if(x.trainingPassengerNotes?.length)x.remarks=x.trainingPassengerNotes.join(" · ");else if(x.trainingPassengers?.length)x.remarks=x.trainingPassengers.map(n=>n+" fährt als Azubi mit.").join(" · ");x.events=eventize(x,i===0,i===segs.length-1,depot);return x});return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}if(isVacation(emp,d))return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[]};if(isSick(emp,d))return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[]};let dow=d.getUTCDay(),weekend=dow===0||dow===6,h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};return{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}if(emp.name==="Robert Edward Davis")return{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};if(ay===3&&!segs.length){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}if(emp.bereich==="Fahrdienst"){let r=h%100,depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};if(r<15)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]}}
+ if(segs.length){let depot=depotFrom(emp,segs),duty=dutyTypeFor(segs),st=segs[0].start,en=Math.max(...segs.map(s=>s.end)),decor=segs.map((s,i)=>{let x={...s,startTime:minToTime(s.start),endTime:minToTime(s.end),dutyType:duty,depot};if(x.breakBefore)x.breakBefore={...x.breakBefore,startTime:minToTime(x.breakBefore.start),endTime:minToTime(x.breakBefore.end)};x.internalBreaks=(x.internalBreaks||[]).map(b=>({...b,startTime:minToTime(b.start),endTime:minToTime(b.end)}));let notes=[];if(x.adminNote)notes.push("Admin: "+x.adminNote);if(x.trainingPassengerNotes?.length)notes.push(x.trainingPassengerNotes.join(" · "));else if(x.trainingPassengers?.length)notes.push(x.trainingPassengers.map(n=>n+" fährt als Azubi mit.").join(" · "));if(notes.length)x.remarks=notes.join(" · ");x.events=eventize(x,i===0,i===segs.length-1,depot);return x});return{status:ay===3?"Fahrdienst · 3. Lehrjahr":ay===2&&apprenticeCanDrive(emp,d)?"Fahrdienst · 2. Lehrjahr · Klasse D bestanden":"Fahrdienst",dutyType:duty,depot,serviceTime:`${minToTime(st)}-${minToTime(en)}`,segments:decor}}if(isVacation(emp,d))return{status:"Urlaub",dutyType:"Urlaub",depot:"",serviceTime:"",segments:[]};if(isSick(emp,d))return{status:"Krank",dutyType:"Krank",depot:"",serviceTime:"",segments:[]};let dow=d.getUTCDay(),weekend=dow===0||dow===6,h=hash(emp.id+dateKey(d)+"status"+String(cfg?._seed||""));if(emp.name==="Emil Breitbau"||emp.name==="Tim Neumann"){let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};return{status:"Organisation",dutyType:"Betriebsleitung / Organisation",depot:"Betriebshof Mitte",serviceTime:"08:00-16:00",segments:[]}}if(emp.name==="Robert Edward Davis")return{status:"Arbeit",dutyType:h%100<22?"Fahrschule / Praxis":"Ausbildungsleitung",depot:"Betriebshof Mitte",serviceTime:"07:30-15:30",segments:[]};if(ay===3&&!segs.length){let depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";return{status:"Ausbildung",dutyType:"3. Lehrjahr · Fahrdienstreserve / Praxis",depot,serviceTime:"08:00-16:00",segments:[]}}if(emp.bereich==="Fahrdienst"){let r=h%100,depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":"Betriebshof Mitte";let rp=reserveProposal(emp,d,day,cfg);if(rp&&reserveIsAccepted(emp,d,day,cfg))return{status:"Reserve",dutyType:"Reserve",depot:rp.depot,serviceTime:rp.serviceTime,segments:[]};if(r<15)return{status:"Fortbildung",dutyType:"Fortbildung / Unterweisung",depot,serviceTime:"08:00-16:00",segments:[]};return{status:"Bereitschaft",dutyType:"Bereitschaft / Hof",depot,serviceTime:"08:00-16:00",segments:[]}}let label="Dienst / Büro",depot=emp.standort==="Spryndorf"?"Betriebshof Spryndorf":emp.standort==="Hechem"?"Betriebshof Hechem":emp.standort==="Mitte"?"Betriebshof Mitte":"Zentrale";if(emp.bereich==="Werkstatt / Technik")label=["Frühschicht Werkstatt","Spätschicht Werkstatt","Werkstatt / Bereitschaft"][h%3];else if(emp.bereich==="Leitstelle / Verkehrssteuerung")label=["Frühdienst Leitstelle","Spätdienst Leitstelle","Nachtdienst Leitstelle"][h%3];else if(emp.bereich==="Disposition")label=["Disposition Früh","Disposition Spät"][h%2];else if(emp.bereich==="Reinigung")label=["Fahrzeugpflege Früh","Fahrzeugpflege Spät/Nacht"][h%2];else if(emp.bereich==="Hofdienst")label=["Hofdienst Früh","Hofdienst Spät"][h%2];return{status:"Arbeit",dutyType:label,depot,serviceTime:/Früh/.test(label)?"05:30-13:30":/Spät/.test(label)?"13:30-21:30":/Nacht/.test(label)?"21:30-05:30":"08:00-16:00",segments:[]}}
 
 // Depot slots v6.4.25: OMSI editor catalog + persistent real vehicle locations.
 function slotDepotName(v){let x=String(v||"").toLowerCase();if(x.includes("spryndorf"))return"Betriebshof Spryndorf";if(x.includes("hechem"))return"Betriebshof Hechem";return"Betriebshof Mitte"}
@@ -1372,6 +1372,97 @@ async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
  return{ok:true,date,planVersion:Number(plan?.version||0),depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,previewMode,missingVehicleAssignments:missing,slotCount:slots.length,depotOccupancy:occupancy,slotReservations:rr.summary,slotConflicts:rr.conflicts,vehicles};
 }
 
+function vehicleNumberFromValue(v){return String(v||"").match(/\d+/)?.[0]||""}
+function runSegmentsForDay(day,run){let out=[];for(const segs of Object.values(day?.assignments||{}))for(const seg of segs||[])if(String(seg?.run||"")===String(run))out.push(seg);return out}
+function runPrimarySegment(day,run){return runSegmentsForDay(day,run).find(s=>!s?.trainingRide)||runSegmentsForDay(day,run)[0]||null}
+function runVehicleCompatible(v,seg){
+ if(!v||!seg)return false;
+ if(!eligibleVehicle(v,seg.category))return false;
+ const depot=slotDepotName(seg.runDepot||seg.depot||seg.startLoc||"");
+ if(isECitaroGHallVehicle(v)&&depot!=="Betriebshof Mitte")return false;
+ return true;
+}
+async function runVehicleEditorDataV6476(env,date,run){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||""))||!String(run||"").trim())throw new Error("Datum oder Umlauf ungültig.");
+ const mk=dateKey(mondayOf(parseDateKey(date))),row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+ if(!row)return null;
+ const plan=JSON.parse(row.plan_json),day=plan?.days?.[date];
+ if(!day)throw new Error("Der ausgewählte Tag ist im aktiven Dienstplan nicht vorhanden.");
+ const primary=runPrimarySegment(day,run);
+ if(!primary)throw new Error("Umlauf wurde an diesem Tag nicht gefunden.");
+ if(primary.manualVehicle||primary.specialOperator||day.runInfo?.[run]?.external)throw new Error("Fremd-/Sonderverkehre mit manuell einzutragendem Wagen können hier nicht mit einem ROGIS-Wagen belegt werden.");
+ const fleet=await activeDepotFleet(env),currentNumber=vehicleNumberFromValue(primary.vehicle||day.runInfo?.[run]?.vehicle?.number);
+ const usage=new Map();
+ for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
+   if(seg?.trainingRide||seg?.manualVehicle||!seg?.run)continue;
+   const vn=vehicleNumberFromValue(seg.vehicle);if(!vn)continue;
+   if(!usage.has(vn))usage.set(vn,new Set());usage.get(vn).add(String(seg.run));
+ }
+ const vehicles=fleet.filter(v=>runVehicleCompatible(v,primary)).map(v=>{
+   const rs=[...(usage.get(String(v.number))||[])].filter(x=>x!==String(run));
+   return{number:String(v.number),label:v.label||`KOM ${v.number}`,model:v.model||"",group:v.group||"",assignedRun:rs[0]||"",assignedRuns:rs};
+ });
+ return{ok:true,date,run:String(run),planVersion:Number(row.version||0),currentVehicleNumber:currentNumber,currentVehicle:primary.vehicle||"",currentVehicleModel:primary.vehicleModel||"",vehicles};
+}
+async function changeRunVehicleV6476(env,date,run,newVehicleNumber,adminNote,by){
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||""))||!String(run||"").trim())throw new Error("Datum oder Umlauf ungültig.");
+ const mk=dateKey(mondayOf(parseDateKey(date))),row=await env.DB.prepare(`SELECT version,plan_json FROM week_plans WHERE monday=?`).bind(mk).first();
+ if(!row)throw new Error("Für diese Woche existiert kein aktiver Dienstplan.");
+ const plan=JSON.parse(row.plan_json),day=plan?.days?.[date];
+ if(!day)throw new Error("Der ausgewählte Tag ist im aktiven Dienstplan nicht vorhanden.");
+ const targetRun=String(run),targetPrimary=runPrimarySegment(day,targetRun);
+ if(!targetPrimary)throw new Error("Umlauf wurde an diesem Tag nicht gefunden.");
+ if(targetPrimary.manualVehicle||targetPrimary.specialOperator||day.runInfo?.[targetRun]?.external)throw new Error("Fremd-/Sonderverkehre können nicht auf einen ROGIS-Wagen geändert werden.");
+
+ const fleet=await activeDepotFleet(env),fleetByNumber=new Map(fleet.map(v=>[String(v.number),v])),wanted=fleetByNumber.get(String(newVehicleNumber));
+ if(!wanted)throw new Error("Der ausgewählte Wagen ist nicht als einsatzfähiger ROGIS-Regelwagen verfügbar.");
+ if(!runVehicleCompatible(wanted,targetPrimary))throw new Error(`${wanted.label||"KOM "+wanted.number} passt von Fahrzeugbauart/Betriebshof nicht zu Umlauf ${targetRun}.`);
+
+ const oldNumber=vehicleNumberFromValue(targetPrimary.vehicle||day.runInfo?.[targetRun]?.vehicle?.number),oldVehicle=fleetByNumber.get(oldNumber)||day.runInfo?.[targetRun]?.vehicle||null;
+ const oldLabel=targetPrimary.vehicle||oldVehicle?.label||`KOM ${oldNumber}`;
+ const oldModel=targetPrimary.vehicleModel||oldVehicle?.model||"";
+ const wantedNumber=String(wanted.number),wantedLabel=wanted.label||`KOM ${wanted.number}`;
+ const note=String(adminNote||"").trim().slice(0,500);
+
+ // Welcher andere Umlauf benutzt den gewünschten Wagen? Trainingskopien zählen nicht extra.
+ const otherRuns=new Set();
+ for(const segs of Object.values(day.assignments||{}))for(const seg of segs||[]){
+   if(seg?.trainingRide||seg?.manualVehicle||String(seg?.run||"")===targetRun)continue;
+   if(vehicleNumberFromValue(seg.vehicle)===wantedNumber)otherRuns.add(String(seg.run));
+ }
+ if(otherRuns.size>1)throw new Error(`${wantedLabel} ist an diesem Tag bereits mehreren Umläufen zugeordnet; automatischer Tausch wäre nicht eindeutig.`);
+ const otherRun=[...otherRuns][0]||"";
+
+ if(wantedNumber!==oldNumber&&otherRun){
+   if(!oldVehicle||!oldNumber)throw new Error("Der bisherige Wagen des Zielumlaufs konnte für den Gegentausch nicht eindeutig ermittelt werden.");
+   const otherPrimary=runPrimarySegment(day,otherRun);
+   if(!otherPrimary)throw new Error("Der Tauschumlauf des ausgewählten Wagens wurde nicht gefunden.");
+   if(!runVehicleCompatible(oldVehicle,otherPrimary))throw new Error(`${oldLabel} passt nicht zum bisherigen Umlauf ${otherRun} von ${wantedLabel}; der Wagenwechsel kann deshalb nicht automatisch getauscht werden.`);
+   for(const seg of runSegmentsForDay(day,otherRun)){
+     seg.vehicle=oldVehicle.label||oldLabel;seg.vehicleModel=oldVehicle.model||oldModel;seg.manualVehicle=false;
+     delete seg.startSlot;delete seg.returnSlot;
+   }
+   if(day.runInfo?.[otherRun]){day.runInfo[otherRun].vehicle=oldVehicle;day.runInfo[otherRun].manualVehicle=false;delete day.runInfo[otherRun].startSlot;delete day.runInfo[otherRun].returnSlot}
+ }
+
+ for(const seg of runSegmentsForDay(day,targetRun)){
+   seg.vehicle=wantedLabel;seg.vehicleModel=wanted.model||"";seg.manualVehicle=false;
+   if(note)seg.adminNote=note;else delete seg.adminNote;
+   delete seg.startSlot;delete seg.returnSlot;
+ }
+ if(day.runInfo?.[targetRun]){day.runInfo[targetRun].vehicle=wanted;day.runInfo[targetRun].manualVehicle=false;delete day.runInfo[targetRun].startSlot;delete day.runInfo[targetRun].returnSlot}
+
+ day.usedVehicles=[...new Set(Object.values(day.runInfo||{}).map(x=>Number(x?.vehicle?.number)).filter(Number.isFinite))];
+ // Stellplätze/Pullout-Zeiten hängen am Wagen und müssen nach dem Tausch neu geplant werden.
+ day.depotSlots={};day.vehicleSlotState={};day.depotPreview=true;
+ plan.depotPreview=true;
+ plan.version=await getNextPlanVersionV63(env,plan.monday);
+ plan.generatedAt=new Date().toISOString();
+ plan.manualVehicleChanges=[...(plan.manualVehicleChanges||[]),{date,run:targetRun,from:oldNumber,to:wantedNumber,swappedRun:otherRun||null,by,at:plan.generatedAt}];
+ await savePlanVersion(env,plan,by,"vehicle-edit",`Wagenänderung ${date} · Umlauf ${targetRun}: ${oldLabel||"ohne Wagen"} → ${wantedLabel}${otherRun?` · Gegentausch mit Umlauf ${otherRun}`:""}`,true);
+ return{ok:true,date,run:targetRun,planVersion:plan.version,oldVehicle:oldLabel,newVehicle:wantedLabel,swappedRun:otherRun||null,depotPlanningRequired:true,message:otherRun?`${targetRun}: ${wantedLabel}; ${otherRun}: ${oldLabel}. Wagen wurden vollständig getauscht.`:`${targetRun}: ${wantedLabel} gespeichert. ${oldLabel} ist für diesen Tag anschließend frei.`};
+}
+
 async function planDepotDayV6462(env,date){
  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(date||"")))throw new Error("Ungültiges Datum.");
  const mk=dateKey(mondayOf(parseDateKey(date)));
@@ -1399,7 +1490,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.75",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.76",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/openomsi/day-state"&&req.method==="GET"){
    const date=String(url.searchParams.get("date")||berlinDateKey());
    if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
@@ -1486,6 +1577,16 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(p==="/api/admin/reset-password"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let u=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(eid).first();if(!u){let username=await createInitialUserForEmployee(e,env);u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=1,updated_at=? WHERE username=?`).bind(ph,salt,now,u.username).run();await env.DB.prepare(`DELETE FROM sessions WHERE username=?`).bind(u.username).run();return json({ok:true,username:u.username,message:`Passwort von ${e.name} wurde auf ${INIT_PASSWORD} zurückgesetzt. Beim nächsten Login muss ein neues Passwort vergeben werden.`})}
  if(p==="/api/admin/employee-week"){let mk=String(url.searchParams.get("monday")||""),eid=String(url.searchParams.get("employeeId")||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let week=await userWeekLite(env,mk,e);if(!week)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(week,200,{"cache-control":"no-store"})}
  if(p==="/api/admin/day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||40),mk=dateKey(mondayOf(parseDateKey(date))),result=await dayRowsLite(env,mk,date,q,offset,limit);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
+ if(p==="/api/admin/run-vehicle-edit"&&req.method==="GET"){
+   const date=String(url.searchParams.get("date")||""),run=String(url.searchParams.get("run")||"");
+   try{const result=await runVehicleEditorDataV6476(env,date,run);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
+   catch(e){return json({error:e?.message||String(e)},400)}
+ }
+ if(p==="/api/admin/run-vehicle-edit"&&req.method==="POST"){
+   const b=await req.json();
+   try{return json(await changeRunVehicleV6476(env,String(b.date||""),String(b.run||""),String(b.vehicleNumber||""),String(b.adminNote||""),su.username))}
+   catch(e){return json({error:e?.message||String(e)},400)}
+ }
  if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||60),mk=dateKey(mondayOf(parseDateKey(date))),result=await vehicleDayRowsLite(env,mk,date,q,offset,limit);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
  if(p==="/api/admin/summary"){let mk=url.searchParams.get("monday"),plan=await loadExistingWeek(env,mk),o=await env.DB.prepare(`SELECT COUNT(*) c FROM objections WHERE status='offen'`).first();let today=new Date(),active=DATA.employees.filter(e=>employeeActiveOn(e,today));return json({staff:active.length,drivers:active.filter(e=>e.bereich==="Fahrdienst").length,openObjections:o?.c||0,version:Number(plan?.version||0)})}
  if(p==="/api/admin/objections"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE status IN ('offen','info') ORDER BY CASE WHEN status='info' THEN 0 ELSE 1 END, created_at ASC LIMIT 200`).all();return json({items:r.results||[]})}
