@@ -92,6 +92,9 @@ public sealed class DienstplanApi : IDisposable
     public Task<DepotDay> GetDepotDayAsync(DateTime date) =>
         GetJsonAsync<DepotDay>($"api/openomsi/depot-day?date={date:yyyy-MM-dd}","Depot");
 
+    public Task<AiDayState> GetAiDayStateAsync(DateTime date) =>
+        GetJsonAsync<AiDayState>($"api/openomsi/day-state?date={date:yyyy-MM-dd}","KI-Status");
+
     public Task<AiDay> GetAiDayAsync(DateTime date) =>
         GetJsonAsync<AiDay>($"api/openomsi/day?date={date:yyyy-MM-dd}","KI");
 
