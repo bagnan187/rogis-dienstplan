@@ -542,45 +542,52 @@ async function depotSyncAuthorizeOrPair(req,env){
  const hash=await depotTokenHash(token),u=new URL(req.url),clientId=String(req.headers.get("x-rogis-depot-client")||u.searchParams.get("clientId")||u.searchParams.get("client")||"").trim();
  if(clientId){
    if(!/^[A-Za-z0-9._:-]{8,160}$/.test(clientId))return false;
-   const row=await env.DB.prepare(`SELECT token_hash FROM depot_sync_clients WHERE client_id=?`).bind(clientId).first(),now=new Date().toISOString();
+   const row=await env.DB.prepare(`SELECT token_hash,last_seen_at FROM depot_sync_clients WHERE client_id=?`).bind(clientId).first(),now=new Date().toISOString();
    if(row){
      if(String(row.token_hash)!==hash)return false;
-     await env.DB.prepare(`UPDATE depot_sync_clients SET last_seen_at=? WHERE client_id=?`).bind(now,clientId).run();
+     if(!row.last_seen_at||!(Date.parse(row.last_seen_at)>Date.now()-30*60*1000))await env.DB.prepare(`UPDATE depot_sync_clients SET last_seen_at=? WHERE client_id=?`).bind(now,clientId).run();
      return true;
    }
    await env.DB.prepare(`INSERT INTO depot_sync_clients(client_id,token_hash,paired_at,last_seen_at,source) VALUES(?,?,?,?,?)`).bind(clientId,hash,now,now,"ROGIS Control Centre v6.4.32 auto-pair").run();
    return true;
  }
  // Legacy clients without a client id keep the old singleton behaviour.
- const row=await env.DB.prepare(`SELECT token_hash FROM depot_sync_pairing WHERE id=1`).first();
- if(row){if(String(row.token_hash)!==hash)return false;await env.DB.prepare(`UPDATE depot_sync_pairing SET last_seen_at=? WHERE id=1`).bind(new Date().toISOString()).run();return true}
+ const row=await env.DB.prepare(`SELECT token_hash,last_seen_at FROM depot_sync_pairing WHERE id=1`).first();
+ if(row){if(String(row.token_hash)!==hash)return false;if(!row.last_seen_at||!(Date.parse(row.last_seen_at)>Date.now()-30*60*1000))await env.DB.prepare(`UPDATE depot_sync_pairing SET last_seen_at=? WHERE id=1`).bind(new Date().toISOString()).run();return true}
  const now=new Date().toISOString();
  await env.DB.prepare(`INSERT OR IGNORE INTO depot_sync_pairing(id,token_hash,paired_at,last_seen_at,source) VALUES(1,?,?,?,?)`).bind(hash,now,now,"ROGIS Control Centre legacy auto-pair").run();
  const check=await env.DB.prepare(`SELECT token_hash FROM depot_sync_pairing WHERE id=1`).first();
  return String(check?.token_hash||"")===hash;
 }
 async function syncDepotSlotsV6425(env,rawSlots,source="ROGIS Control Centre"){
- const now=new Date().toISOString(),validTypes=new Set(["DS","DG","ES","EG"]),clean=[];
+ const now=new Date().toISOString(),validTypes=new Set(["DS","DG","ES","EG"]),byId=new Map();
  for(const x of Array.isArray(rawSlots)?rawSlots:[]){
-   const id=String(x?.slotId||x?.slot_id||x?.id||"").trim().toUpperCase(),type=String(x?.slotType||x?.slot_type||x?.type||"").trim().toUpperCase();
-   if(!/^[MSH]\d{3,4}$/.test(id)||!validTypes.has(type))continue;
-   const depot=id.startsWith("S")?"Betriebshof Spryndorf":id.startsWith("H")?"Betriebshof Hechem":"Betriebshof Mitte",length=type.endsWith("G")?18:12;
-   clean.push({id,type,depot,length,x:Number(x?.x||0),y:Number(x?.y||0),z:Number(x?.z||0),heading:Number(x?.heading||0),mapName:String(x?.tile||x?.mapName||""),objectPath:String(x?.objectPath||x?.mapPath||"")});
+  const id=String(x?.slotId||x?.slot_id||x?.id||"").trim().toUpperCase(),type=String(x?.slotType||x?.slot_type||x?.type||"").trim().toUpperCase();
+  if(!/^[MSH]\d{3,4}$/.test(id)||!validTypes.has(type))continue;
+  const depot=id.startsWith("S")?"Betriebshof Spryndorf":id.startsWith("H")?"Betriebshof Hechem":"Betriebshof Mitte";
+  byId.set(id,{id,type,depot,length:type.endsWith("G")?18:12,x:Number(x?.x||0),y:Number(x?.y||0),z:Number(x?.z||0),heading:Number(x?.heading||0),mapName:String(x?.tile||x?.mapName||""),objectPath:String(x?.objectPath||x?.mapPath||"")});
  }
+ const clean=[...byId.values()];
  if(!clean.length)throw new Error("Keine gültig beschrifteten Depot-Slots gefunden. Erwartet werden z. B. M001, S001 oder H001.");
- await env.DB.prepare(`UPDATE depot_slots SET active=0`).run();
- for(let i=0;i<clean.length;i+=80){
-   const batch=clean.slice(i,i+80).map(x=>env.DB.prepare(`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET depot=excluded.depot,slot_type=excluded.slot_type,length_m=excluded.length_m,x=excluded.x,y=excluded.y,z=excluded.z,heading=excluded.heading,map_name=excluded.map_name,object_path=excluded.object_path,synced_at=excluded.synced_at,active=1`).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now));
-   await env.DB.batch(batch);
+ // Keine generelle Deaktivierung aller Slots vor jedem Sync. Neue und tatsächlich
+ // geänderte Slots werden geschrieben; identische Werte kosten keine D1-Writes.
+ const cols=["depot","slot_type","length_m","x","y","z","heading","map_name","object_path"];
+ const updates=cols.map(c=>`${c}=excluded.${c}`).concat(["active=1","synced_at=excluded.synced_at"]).join(",");
+ const diffs=cols.map(c=>`depot_slots.${c} IS NOT excluded.${c}`).concat(["depot_slots.active IS NOT 1"]).join(" OR ");
+ const sql=`INSERT INTO depot_slots(slot_id,depot,slot_type,length_m,x,y,z,heading,map_name,object_path,synced_at,active) VALUES(?,?,?,?,?,?,?,?,?,?,?,1) ON CONFLICT(slot_id) DO UPDATE SET ${updates} WHERE ${diffs}`;
+ let changed=0;
+ for(let i=0;i<clean.length;i+=40){
+  const stmts=clean.slice(i,i+40).map(x=>env.DB.prepare(sql).bind(x.id,x.depot,x.type,x.length,x.x,x.y,x.z,x.heading,x.mapName,x.objectPath,now));
+  const results=await env.DB.batch(stmts);
+  changed+=results.reduce((n,r)=>n+Number(r?.meta?.changes||0),0);
  }
- // Gültige feste Zuordnungen behalten. Nur Verweise auf inzwischen entfernte Slots verwerfen.
- await env.DB.prepare(`DELETE FROM depot_slot_assignments
-   WHERE (start_slot IS NOT NULL AND start_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))
-      OR (return_slot IS NOT NULL AND return_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))`).run();
+ const retired=await env.DB.prepare(`UPDATE depot_slots SET active=0 WHERE active=1 AND slot_id NOT IN (SELECT value FROM json_each(?))`).bind(JSON.stringify(clean.map(x=>x.id))).run();
+ const retiredCount=Number(retired?.meta?.changes||0);
+ // Nur nach echten Entfernungen Zuordnungen auf nicht mehr vorhandene Slots prüfen.
+ if(retiredCount)await env.DB.prepare(`DELETE FROM depot_slot_assignments WHERE (start_slot IS NOT NULL AND start_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1)) OR (return_slot IS NOT NULL AND return_slot NOT IN (SELECT slot_id FROM depot_slots WHERE active=1))`).run();
  const typeCounts=clean.reduce((a,x)=>(a[x.type]=(a[x.type]||0)+1,a),{});
- return{ok:true,slotCount:clean.length,slotTypes:typeCounts,syncedAt:now,source};
+ return{ok:true,slotCount:clean.length,slotTypes:typeCounts,changedSlots:changed,retiredSlots:retiredCount,syncedAt:now,source};
 }
-
 function generateWeek(monday,version=1,cfg={},fleet=DATA.fleet,seed="",employeeSettings={}){let settings={...DEFAULT_GENERATION_SETTINGS,_seed:seed},days={};for(let i=0;i<7;i++){let d=addDays(monday,i);days[dateKey(d)]=buildDay(d,settings,fleet,seed,employeeSettings)}return{monday:dateKey(monday),generatedAt:new Date().toISOString(),version,seed,settings,employeeSettings:{...employeeSettings},employeeSeeds:{},days}}
 
 const LOUIS_START_DATE="2026-10-12",LOUIS_ONBOARDING_END="2026-10-18";
@@ -652,7 +659,44 @@ function normalizedVehicleStatus(raw,model,num){
 function activeVehicleStatus(status){return /^im betrieb$/i.test(String(status||"").trim())}
 function deriveVehicleGroup(model,base){if(base?.group)return base.group;return /A23|18C|19C|\bG\b|Gelenk/i.test(model)?"artic":"solo"}
 async function recordFleetSync(env,state){let now=new Date().toISOString();await env.DB.prepare(`INSERT INTO fleet_sync_state(id,source_url,last_success_at,last_attempt_at,status,message,vehicle_count,active_count,unavailable_count) VALUES(1,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET source_url=excluded.source_url,last_success_at=CASE WHEN excluded.status='ok' THEN excluded.last_success_at ELSE fleet_sync_state.last_success_at END,last_attempt_at=excluded.last_attempt_at,status=excluded.status,message=excluded.message,vehicle_count=excluded.vehicle_count,active_count=excluded.active_count,unavailable_count=excluded.unavailable_count`).bind(state.source||FLEET_SHEET_DEFAULT,state.status==='ok'?now:null,now,state.status,state.message||'',state.vehicleCount||0,state.activeCount||0,state.unavailableCount||0).run()}
-async function syncFleetFromGoogle(env){let source=env.FLEET_SHEET_CSV_URL||FLEET_SHEET_DEFAULT;try{let res=await fetch(source,{headers:{"user-agent":"ROGIS-Dienstplan/1.1","accept":"text/csv,text/plain;q=0.9,*/*;q=0.1"}});if(!res.ok)throw new Error(`Google Sheets antwortet mit HTTP ${res.status}. Prüfe, ob die Tabelle per Link/CSV lesbar ist.`);let text=await res.text();if(!text||/<!doctype html|<html/i.test(text.slice(0,500)))throw new Error("Google Sheets lieferte keine CSV-Daten. Die Tabelle muss für den Worker lesbar sein.");let rows=parseCsv(text),model="",vehicles=[];for(let i=0;i<rows.length;i++){let a=String(rows[i]?.[0]||"").trim();if(/^\d{4}$/.test(a)){let num=Number(a),base=DATA.fleet.find(v=>Number(v.number)===num),status=normalizedVehicleStatus(rows[i]?.[10],model,num),regular=activeVehicleStatus(status)&&num!==1603;vehicles.push({number:num,label:`KOM ${num}`,model:model||base?.model||"Unbekannt",status,group:deriveVehicleGroup(model,base),regular,alternative:!!base?.alternative,large:!!base?.large,regio:!!base?.regio,advertising:String(rows[i]?.[2]||"").trim(),special:String(rows[i]?.[5]||"").trim(),sourceRow:i+1})}else if(a&&!/^(Stand |TB =|Heck =|Grün =|Orange =|Solobusse:|Gelenkbusse:|Wagennm\.|\(bei Werbungen)/i.test(a)&&!/^Statuspflege/i.test(a))model=a}if(vehicles.length<50)throw new Error(`Zu wenige Fahrzeuge erkannt (${vehicles.length}). Sync abgebrochen.`);let now=new Date().toISOString();for(let i=0;i<vehicles.length;i+=40){let chunk=vehicles.slice(i,i+40).map(v=>env.DB.prepare(`INSERT INTO vehicles(number,label,model,status,group_type,regular,alternative,large,regio,advertising,special,source_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(number) DO UPDATE SET label=excluded.label,model=excluded.model,status=excluded.status,group_type=excluded.group_type,regular=excluded.regular,alternative=excluded.alternative,large=excluded.large,regio=excluded.regio,advertising=excluded.advertising,special=excluded.special,source_row=excluded.source_row,synced_at=excluded.synced_at`).bind(v.number,v.label,v.model,v.status,v.group,v.regular?1:0,v.alternative?1:0,v.large?1:0,v.regio?1:0,v.advertising,v.special,v.sourceRow,now));await env.DB.batch(chunk)}await env.DB.prepare(`DELETE FROM vehicles WHERE synced_at<>?`).bind(now).run();let active=vehicles.filter(v=>v.regular).length;await recordFleetSync(env,{source,status:"ok",message:`${vehicles.length} Fahrzeuge aus Google Sheets synchronisiert.`,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active});return{ok:true,source,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active,syncedAt:now}}catch(e){await recordFleetSync(env,{source,status:"error",message:String(e?.message||e)});throw e}}
+async function syncFleetFromGoogle(env){
+ const source=env.FLEET_SHEET_CSV_URL||FLEET_SHEET_DEFAULT;
+ try{
+  const res=await fetch(source,{headers:{"user-agent":"ROGIS-Dienstplan/1.1","accept":"text/csv,text/plain;q=0.9,*/*;q=0.1"}});
+  if(!res.ok)throw new Error(`Google Sheets antwortet mit HTTP ${res.status}. Prüfe, ob die Tabelle per Link/CSV lesbar ist.`);
+  const csvText=await res.text();
+  if(!csvText||/<!doctype html|<html/i.test(csvText.slice(0,500)))throw new Error("Google Sheets lieferte keine CSV-Daten.");
+  const rows=parseCsv(csvText),vehicles=[],seen=new Set();let model="";
+  for(let i=0;i<rows.length;i++){
+   const a=String(rows[i]?.[0]||"").trim();
+   if(/^\d{4}$/.test(a)){
+    const num=Number(a),base=DATA.fleet.find(v=>Number(v.number)===num),status=normalizedVehicleStatus(rows[i]?.[10],model,num);
+    if(seen.has(num))continue;seen.add(num);
+    vehicles.push({number:num,label:`KOM ${num}`,model:model||base?.model||"Unbekannt",status,group:deriveVehicleGroup(model,base),regular:activeVehicleStatus(status)&&num!==1603,alternative:!!base?.alternative,large:!!base?.large,regio:!!base?.regio,advertising:String(rows[i]?.[2]||"").trim(),special:String(rows[i]?.[5]||"").trim(),sourceRow:i+1});
+   }else if(a&&!/^(Stand |TB =|Heck =|Grün =|Orange =|Solobusse:|Gelenkbusse:|Wagennm\.|\(bei Werbungen)/i.test(a)&&!/^Statuspflege/i.test(a))model=a;
+  }
+  if(vehicles.length<50)throw new Error(`Zu wenige Fahrzeuge erkannt (${vehicles.length}). Sync abgebrochen.`);
+  const now=new Date().toISOString();
+  // UPSERT nur wenn sich ein Sachwert geändert hat. Ein bloßer Cron-Lauf
+  // darf nicht Hunderte D1-Zeilen/Indexeinträge aktualisieren.
+  const columns=["label","model","status","group_type","regular","alternative","large","regio","advertising","special","source_row"];
+  const update=columns.map(c=>`${c}=excluded.${c}`).concat(["synced_at=excluded.synced_at"]).join(",");
+  const changed=columns.map(c=>`vehicles.${c} IS NOT excluded.${c}`).join(" OR ");
+  const sql=`INSERT INTO vehicles(number,label,model,status,group_type,regular,alternative,large,regio,advertising,special,source_row,synced_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(number) DO UPDATE SET ${update} WHERE ${changed}`;
+  let written=0;
+  for(let i=0;i<vehicles.length;i+=40){
+   const stmts=vehicles.slice(i,i+40).map(v=>env.DB.prepare(sql).bind(v.number,v.label,v.model,v.status,v.group,v.regular?1:0,v.alternative?1:0,v.large?1:0,v.regio?1:0,v.advertising,v.special,v.sourceRow,now));
+   const results=await env.DB.batch(stmts);
+   written+=results.reduce((n,r)=>n+Number(r?.meta?.changes||0),0);
+  }
+  // Synced_at markiert die letzte echte Änderung, nicht jeden CSV-Abruf.
+  // JSON-Einzelparameter vermeidet das Cloudflare-Limit von 100 SQL-Bindings.
+  const removed=await env.DB.prepare(`DELETE FROM vehicles WHERE number NOT IN (SELECT CAST(value AS INTEGER) FROM json_each(?))`).bind(JSON.stringify(vehicles.map(v=>v.number))).run();
+  const active=vehicles.filter(v=>v.regular).length;
+  await recordFleetSync(env,{source,status:"ok",message:`${vehicles.length} Fahrzeuge geprüft, ${written} geändert.`,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active});
+  return{ok:true,source,vehicleCount:vehicles.length,activeCount:active,unavailableCount:vehicles.length-active,changedVehicles:written,removedVehicles:Number(removed?.meta?.changes||0),syncedAt:now};
+ }catch(e){try{await recordFleetSync(env,{source,status:"error",message:String(e?.message||e)})}catch{}throw e}
+}
 async function loadFleetFromDb(env){let r=await env.DB.prepare(`SELECT * FROM vehicles ORDER BY number`).all(),rows=r.results||[];if(!rows.length)return DATA.fleet;return rows.map(x=>({number:Number(x.number),label:x.label||`KOM ${x.number}`,model:x.model||"",status:x.status||"",group:x.group_type||"solo",regular:!!x.regular,alternative:!!x.alternative,large:!!x.large,regio:!!x.regio,advertising:x.advertising||"",special:x.special||""}))}
 async function fleetStatus(env){let state=await env.DB.prepare(`SELECT * FROM fleet_sync_state WHERE id=1`).first(),counts=await env.DB.prepare(`SELECT COUNT(*) total,SUM(CASE WHEN regular=1 THEN 1 ELSE 0 END) active,SUM(CASE WHEN regular=0 THEN 1 ELSE 0 END) unavailable FROM vehicles`).first();return{source:env.FLEET_SHEET_CSV_URL||FLEET_SHEET_DEFAULT,lastSuccessAt:state?.last_success_at||null,lastAttemptAt:state?.last_attempt_at||null,status:state?.status||"noch nicht synchronisiert",message:state?.message||"",vehicleCount:Number(counts?.total||0),activeCount:Number(counts?.active||0),unavailableCount:Number(counts?.unavailable||0)}}
 async function ensureDepotSlotSchemaV6427(env){
