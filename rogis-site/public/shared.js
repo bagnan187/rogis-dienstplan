@@ -16,6 +16,7 @@ async function loadLineData(){
   }
 }
 export const data={...baseData,lines:await loadLineData()};
+export const heroPhotos=await fetch('/hero-data.json',{cache:'no-cache'}).then(r=>r.ok?r.json():{}).catch(()=>({}));
 export const path=decodeURI(location.pathname).replace(/\/$/,'')||'/';
 const P={bus:'M6 17h20V6q0-3-10-3T6 6zm0-8h20M10 3v6m12-6v6M8 17v4m16-4v4M10 13h1m10 0h1M5 25h22',network:'M6 6h14q6 0 6 6t-6 6H12q-6 0-6 6v2M6 3v6m6 6v6m14-12v6M3 26h6',ticket:'M4 7h24v6a3 3 0 0 0 0 6v6H4v-6a3 3 0 0 0 0-6zm16 0v4m0 4v2m0 4v4M9 11h6m-6 5h6m-6 5h3',service:'M4 17v-3a12 12 0 0 1 24 0v3M4 13h4v10H4zm20 0h4v10h-4zm0 10q0 5-8 5h-3',alert:'M16 3 30 27H2zm0 8v7m0 4v1',building:'M5 28V8l11-5 11 5v20M2 28h28M10 11h2m8 0h2m-12 5h2m8 0h2m-12 5h2m8 0h2m-8 7v-5h4v5',people:'M12 5a4 4 0 1 1 0 8 4 4 0 0 1 0-8m10 1a3 3 0 1 1 0 6M3 27v-4q0-6 9-6t9 6v4m2-11q6 1 6 6v5',access:'M16 3a2 2 0 1 1 0 4 2 2 0 0 1 0-4M5 10h22m-11 0v9m0-3-6 12m6-12 6 12',bag:'M7 10h18v19H7zm5 0V6a4 4 0 0 1 8 0v4M7 16h18',news:'M5 4h20v23H5zm4 5h12m-12 5h5v5H9zm9 0h3m-3 5h3M9 23h12m4-14h4v17q0 3-4 1',calendar:'M5 6h22v23H5zm0 7h22M10 3v6m12-6v6M10 18h2m8 0h2m-12 6h2m8 0h2',document:'M7 3h12l6 6v20H7zm12 0v6h6M11 14h10m-10 5h10m-10 5h6',swap:'M4 9h23l-5-5m5 5-5 5M28 23H5l5 5m-5-5 5-5',tools:'m6 3 5 5-3 3-5-5q-2 9 7 9l14 14 5-5-14-14Q15 2 6 3z',learn:'m2 11 14-8 14 8-14 8zm5 3v9q9 7 18 0v-9m5-3v13',lock:'M8 14h16v15H8zm3 0V8a5 5 0 0 1 10 0v6m-5 6v4',dashboard:'M4 4h10v10H4zm14 0h10v6H18zM4 18h10v10H4zm14-4h10v14H18z',menu:'M4 8h24M4 16h24M4 24h24',mail:'M3 7h26v20H3zm0 0 13 11L29 7',search:'M14 3a10 10 0 1 1 0 20 10 10 0 0 1 0-20m7 18 8 8'};
 export const icon=n=>`<svg class="icon" aria-hidden="true" viewBox="0 0 32 32"><path d="${P[n]||P.document}"/></svg>`;
@@ -91,6 +92,25 @@ export function wirePublic(){
     finally{b.disabled=false}
   }));
 
+  const heroRoot=$('[data-hero]');
+  if(heroRoot){
+    const items=[...heroRoot.querySelectorAll('[data-hero-item]')],dots=[...heroRoot.querySelectorAll('[data-hero-dot]')];
+    const eyebrow=$('#hero-eyebrow'),title=$('#hero-title'),copy=$('#hero-copy'),cta=$('#hero-cta');
+    let index=0,timer;
+    const activate=(next,manual=false)=>{
+      index=(next+items.length)%items.length;
+      const el=items[index],d=el.dataset;
+      items.forEach((x,i)=>x.classList.toggle('active',i===index));dots.forEach((x,i)=>x.classList.toggle('active',i===index));
+      heroRoot.classList.remove('copy-swap');void heroRoot.offsetWidth;heroRoot.classList.add('copy-swap');
+      if(eyebrow)eyebrow.textContent=d.eyebrow||'ROGIS';
+      if(title){const parts=(d.title||'').split('|');title.innerHTML=parts.map((x,i)=>i===parts.length-1?'<em>'+x+'</em>':x+'<br>').join('')}
+      if(copy)copy.textContent=d.copy||'';
+      if(cta){cta.textContent=d.cta||'Mehr erfahren';cta.href=d.href||'/fahrinfo/'}
+      if(manual){clearInterval(timer);timer=setInterval(()=>activate(index+1),5600)}
+    };
+    dots.forEach((b,i)=>b.addEventListener('click',()=>activate(i,true)));
+    if(!matchMedia('(prefers-reduced-motion: reduce)').matches)timer=setInterval(()=>activate(index+1),5600);
+  }
   const filterLines=()=>{
     if(!$('#lineq'))return;
     const q=$('#lineq').value.toLocaleLowerCase('de').trim();
