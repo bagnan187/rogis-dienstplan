@@ -120,7 +120,7 @@ export function wirePublic(){
     $$('#stops tr').forEach(x=>x.hidden=!x.textContent.toLocaleLowerCase('de').includes(q));
   });
 
-  $('details').forEach(d=>d.addEventListener('toggle',()=>{
+  $$('details').forEach(d=>d.addEventListener('toggle',()=>{
     d.classList.toggle('is-open',d.open);
     if(d.open){d.classList.remove('detail-pop');requestAnimationFrame(()=>d.classList.add('detail-pop'))}
   }));
