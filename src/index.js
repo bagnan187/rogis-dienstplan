@@ -1455,7 +1455,9 @@ async function changeRunVehicleV6476(env,date,run,newVehicleNumber,adminNote,by)
  day.usedVehicles=[...new Set(Object.values(day.runInfo||{}).map(x=>Number(x?.vehicle?.number)).filter(Number.isFinite))];
  // Stellplätze/Pullout-Zeiten hängen am Wagen und müssen nach dem Tausch neu geplant werden.
  day.depotSlots={};day.vehicleSlotState={};day.depotPreview=true;
- plan.depotPreview=true;
+ // Nur dieser Tag braucht nach dem Wagenwechsel eine neue Hofbelegung.
+ // Die übrigen sechs Tage behalten ihre bereits gespeicherten Stellplätze.
+ plan.depotPreview=false;
  plan.version=await getNextPlanVersionV63(env,plan.monday);
  plan.generatedAt=new Date().toISOString();
  plan.manualVehicleChanges=[...(plan.manualVehicleChanges||[]),{date,run:targetRun,from:oldNumber,to:wantedNumber,swappedRun:otherRun||null,by,at:plan.generatedAt}];
