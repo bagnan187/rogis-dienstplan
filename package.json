@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "check": "wrangler deploy --dry-run",
-    "validate": "node scripts/validate.mjs && node --check src/index.js",
+    "validate": "node scripts/validate.mjs && node --check src/index.js && node scripts/test-nrw-feiertage.mjs",
     "predeploy": "npm run validate",
     "precheck": "npm run validate"
   },
