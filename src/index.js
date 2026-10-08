@@ -965,6 +965,43 @@ async function userWeekLite(env,mondayKey,emp){
  return{monday:mondayKey,version:Number(row.version||0),generatedAt:row.generated_at||null,days};
 }
 
+async function dayRowsLite(env,mondayKey,date,q,offset=0,limit=40){
+ offset=Math.max(0,Math.floor(Number(offset)||0));limit=Math.max(10,Math.min(60,Math.floor(Number(limit)||40)));
+ const d=parseDateKey(date),qq=String(q||"").trim().toLowerCase();
+ const assignmentsPath=`$."days"."${date}"."assignments"`;
+ const meta=await env.DB.prepare(`SELECT version,json_extract(plan_json,'$.seed') seed FROM week_plans WHERE monday=?`).bind(mondayKey).first();
+ if(!meta)return null;
+
+ const total=DATA.employees.length,emps=DATA.employees.slice(offset,offset+limit),ids=emps.map(e=>String(e.id));
+ if(!emps.length)return{rows:[],total,offset,limit,nextOffset:null,planVersion:Number(meta.version||0)};
+ const ph=ids.map(()=>"?").join(",");
+
+ // Nur Zuweisungen der aktuellen 40 Personen aus D1 holen; kein kompletter Tag/Plan im Worker.
+ const [assignedRes,segsRes,ovRes]=await Promise.all([
+   env.DB.prepare(`SELECT a.key employee_id FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a WHERE wp.monday=?`).bind(assignmentsPath,mondayKey).all(),
+   env.DB.prepare(`SELECT a.key employee_id,a.value segs_json FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a WHERE wp.monday=? AND a.key IN (${ph})`).bind(assignmentsPath,mondayKey,...ids).all(),
+   env.DB.prepare(`SELECT * FROM duty_overrides WHERE duty_date=? AND employee_id IN (${ph})`).bind(date,...ids).all()
+ ]);
+ const assignedIds=new Set((assignedRes.results||[]).map(x=>String(x.employee_id)));
+ const segMap=new Map((segsRes.results||[]).map(x=>[String(x.employee_id),parseJsonCell(x.segs_json,[])]));
+ const ovMap=new Map((ovRes.results||[]).map(x=>[String(x.employee_id),x]));
+ const fakeAssignments={};for(const id of assignedIds)fakeAssignments[id]=[{}];
+ const day={assignments:fakeAssignments};
+ const cfg={...DEFAULT_GENERATION_SETTINGS,_seed:String(meta.seed||"")};
+ const rows=[];
+ for(const emp of emps){
+   const segs=segMap.get(String(emp.id))||[];
+   if(segs.length)day.assignments[emp.id]=segs;else if(!assignedIds.has(String(emp.id)))delete day.assignments[emp.id];
+   const effective=normalizeStopNames(applyOverride(statusForEmployee(emp,d,day,cfg),ovMap.get(String(emp.id))));
+   const summary=effective.segments?.length?effective.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";
+   const row={id:emp.id,name:emp.name,dutyType:effective.dutyType,status:effective.status,depot:effective.depot,serviceTime:effective.serviceTime,summary,manual:!!effective.manual,note:effective.note||""};
+   if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row);
+   if(segs.length)day.assignments[emp.id]=[{}];
+ }
+ const nextOffset=offset+limit<total?offset+limit:null;
+ return{rows,total,offset,limit,nextOffset,planVersion:Number(meta.version||0)};
+}
+
 async function dayRows(plan,date,q,env){let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=q.toLowerCase(),rows=[];for(const emp of DATA.employees){let s=normalizeStopNames(applyOverride(statusForEmployee(emp,d,plan.days[date],planCfgForEmployee(plan,emp.id,d)),ovs.get(`${emp.id}|${date}`))),summary=s.segments?.length?s.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";let row={id:emp.id,name:emp.name,dutyType:s.dutyType,status:s.status,depot:s.depot,serviceTime:s.serviceTime,summary,manual:!!s.manual,note:s.note||""};if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row)}return rows}
 async function vehicleDayRows(plan,date,q,env){
  let d=parseDateKey(date),ovs=await overrideMap(env,date,date),qq=String(q||"").trim().toLowerCase();
@@ -1027,143 +1064,80 @@ async function vehicleDayRows(plan,date,q,env){
  const depotAssignmentsFixed=activeVehicleNumbers.size>0&&missingActiveVehicleAssignments.length===0&&!previewMode;
  return{date,rows:filtered,usedVehicles,activeVehicles,notUsedVehicles:Math.max(0,activeVehicles-usedVehicles),depotOccupancy:occupancy,slotCount:slots.length,slotReservations:rr.summary,slotConflicts:rr.conflicts,depotAssignmentsFixed,previewMode,missingVehicleAssignments:missingActiveVehicleAssignments,planVersion:Number(plan?.version||0)}
 }
-async function vehicleDayRowsLite(env,mondayKey,date,q){
+async function vehicleDayRowsLite(env,mondayKey,date,q,offset=0,limit=60){
+ offset=Math.max(0,Math.floor(Number(offset)||0));limit=Math.max(20,Math.min(80,Math.floor(Number(limit)||60)));
  const assignmentsPath=`$."days"."${date}"."assignments"`;
  const depotPath=`$."days"."${date}"."depotSlots"`;
  const dayPreviewPath=`$."days"."${date}"."depotPreview"`;
  const qq=String(q||"").trim().toLowerCase();
 
- // Wichtig für Cloudflare: Kein plan_json und kein Tages-JSON gelangt mehr in JavaScript.
- // SQLite/D1 extrahiert ausschließlich die kleinen Felder, die die Wageneinsatz-Tabelle benötigt.
- const [meta,segRes,depotRes,fleetRes,slotRes,ovRes]=await Promise.all([
+ const fleetCount=await env.DB.prepare(`SELECT COUNT(*) c FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb'`).first();
+ let total=Number(fleetCount?.c||0);
+ let fleetRes=await env.DB.prepare(`SELECT number,label,model,status,regular FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb' ORDER BY number LIMIT ? OFFSET ?`).bind(limit,offset).all();
+ let fleet=(fleetRes.results||[]).map(v=>({number:Number(v.number),label:v.label||`KOM ${v.number}`,model:v.model||"",status:v.status||"",regular:!!v.regular}));
+ if(!total){
+   const fallback=(DATA.fleet||[]).filter(v=>v.regular&&Number(v.number)!==1603);total=fallback.length;fleet=fallback.slice(offset,offset+limit);
+ }
+ if(!fleet.length)return{date,rows:[],usedVehicles:0,activeVehicles:total,notUsedVehicles:total,total,offset,limit,nextOffset:null,slotCount:0,previewMode:false,planVersion:0};
+
+ const labels=fleet.map(v=>String(v.label||`KOM ${v.number}`)),numbers=fleet.map(v=>String(v.number));
+ const lph=labels.map(()=>"?").join(","),nph=numbers.map(()=>"?").join(",");
+ const [meta,segRes,depotRes,slotCountRes,ovRes]=await Promise.all([
    env.DB.prepare(`SELECT version,json_extract(plan_json,'$.depotPreview') root_preview,json_extract(plan_json,?) day_preview FROM week_plans WHERE monday=?`).bind(dayPreviewPath,mondayKey).first(),
    env.DB.prepare(`
-     SELECT
-       a.key employee_id,
-       json_extract(s.value,'$.employeeName') employee_name,
-       json_extract(s.value,'$.employeeId') segment_employee_id,
-       json_extract(s.value,'$.vehicle') vehicle,
-       json_extract(s.value,'$.vehicleModel') vehicle_model,
-       json_extract(s.value,'$.run') run,
-       json_extract(s.value,'$.start') start_min,
-       json_extract(s.value,'$.end') end_min,
-       json_extract(s.value,'$.startLoc') start_loc,
-       json_extract(s.value,'$.endLoc') end_loc,
-       json_extract(s.value,'$.lines') lines_json
-     FROM week_plans wp,
-          json_each(json_extract(wp.plan_json, ?)) a,
-          json_each(a.value) s
-     WHERE wp.monday=?
-       AND COALESCE(json_extract(s.value,'$.trainingRide'),0)=0
-       AND COALESCE(json_extract(s.value,'$.manualVehicle'),0)=0
-       AND COALESCE(json_extract(s.value,'$.vehicle'),'')<>''
-       AND json_extract(s.value,'$.vehicle')<>'KOM offen'
-       AND lower(COALESCE(json_extract(s.value,'$.vehicle'),'')) NOT LIKE '%manuell nachtragen%'
-   `).bind(assignmentsPath,mondayKey).all(),
+     SELECT a.key employee_id,json_extract(s.value,'$.employeeName') employee_name,json_extract(s.value,'$.employeeId') segment_employee_id,
+            json_extract(s.value,'$.vehicle') vehicle,json_extract(s.value,'$.vehicleModel') vehicle_model,json_extract(s.value,'$.run') run,
+            json_extract(s.value,'$.start') start_min,json_extract(s.value,'$.end') end_min,json_extract(s.value,'$.startLoc') start_loc,
+            json_extract(s.value,'$.endLoc') end_loc,json_extract(s.value,'$.lines') lines_json
+     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) a,json_each(a.value) s
+     WHERE wp.monday=? AND json_extract(s.value,'$.vehicle') IN (${lph})
+       AND COALESCE(json_extract(s.value,'$.trainingRide'),0)=0 AND COALESCE(json_extract(s.value,'$.manualVehicle'),0)=0
+   `).bind(assignmentsPath,mondayKey,...labels).all(),
    env.DB.prepare(`
-     SELECT
-       COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) vehicle_number,
-       json_extract(d.value,'$.used') used,
-       json_extract(d.value,'$.startDepot') start_depot,
-       json_extract(d.value,'$.startSlot') start_slot,
-       json_extract(d.value,'$.endDepot') end_depot,
-       COALESCE(json_extract(d.value,'$.endSlot'),json_extract(d.value,'$.returnSlot')) end_slot,
-       json_extract(d.value,'$.slotType') slot_type,
-       json_extract(d.value,'$.pulloutMin') pullout_min,
-       json_extract(d.value,'$.pullinMin') pullin_min
-     FROM week_plans wp,
-          json_each(json_extract(wp.plan_json, ?)) d
-     WHERE wp.monday=?
-   `).bind(depotPath,mondayKey).all(),
-   env.DB.prepare(`SELECT number,label,model,status,regular FROM vehicles WHERE regular=1 OR lower(trim(status))='im betrieb' ORDER BY number`).all(),
-   env.DB.prepare(`SELECT depot,COUNT(*) slot_count FROM depot_slots WHERE active=1 GROUP BY depot`).all(),
+     SELECT COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) vehicle_number,json_extract(d.value,'$.used') used,
+            json_extract(d.value,'$.startDepot') start_depot,json_extract(d.value,'$.startSlot') start_slot,
+            json_extract(d.value,'$.endDepot') end_depot,COALESCE(json_extract(d.value,'$.endSlot'),json_extract(d.value,'$.returnSlot')) end_slot,
+            json_extract(d.value,'$.slotType') slot_type,json_extract(d.value,'$.pulloutMin') pullout_min,json_extract(d.value,'$.pullinMin') pullin_min
+     FROM week_plans wp,json_each(json_extract(wp.plan_json,?)) d
+     WHERE wp.monday=? AND CAST(COALESCE(json_extract(d.value,'$.vehicleNumber'),d.key) AS TEXT) IN (${nph})
+   `).bind(depotPath,mondayKey,...numbers).all(),
+   env.DB.prepare(`SELECT COUNT(*) c FROM depot_slots WHERE active=1`).first(),
    env.DB.prepare(`SELECT employee_id FROM duty_overrides WHERE duty_date=?`).bind(date).all()
  ]);
  if(!meta)return null;
 
- let fleet=(fleetRes.results||[]).map(v=>({number:Number(v.number),label:v.label||`KOM ${v.number}`,model:v.model||"",status:v.status||"",regular:!!v.regular}));
- if(!fleet.length)fleet=(DATA.fleet||[]).filter(v=>v.regular&&Number(v.number)!==1603);
- const overridden=new Set((ovRes.results||[]).map(x=>String(x.employee_id)));
- const byVehicle=new Map();
- for(const v of fleet){
-   const key=String(v.label||`KOM ${v.number}`);
-   byVehicle.set(key,{vehicle:key,model:v.model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]});
- }
-
+ const overridden=new Set((ovRes.results||[]).map(x=>String(x.employee_id))),byVehicle=new Map();
+ for(const v of fleet){const key=String(v.label||`KOM ${v.number}`);byVehicle.set(key,{vehicle:key,model:v.model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]})}
  for(const seg of segRes.results||[]){
-   const eid=String(seg.employee_id||seg.segment_employee_id||"");
-   if(overridden.has(eid))continue;
-   const key=String(seg.vehicle||"");
-   if(!key)continue;
-   const rowV=byVehicle.get(key)||{vehicle:key,model:seg.vehicle_model||"",used:false,runs:[],drivers:[],startTime:"",endTime:"",startLoc:"",endLoc:"",lines:[]};
+   const eid=String(seg.employee_id||seg.segment_employee_id||"");if(overridden.has(eid))continue;
+   const key=String(seg.vehicle||"");if(!key)continue;
+   const rowV=byVehicle.get(key);if(!rowV)continue;
    rowV.used=true;if(!rowV.model)rowV.model=seg.vehicle_model||"";
    const run=String(seg.run||"").trim();if(run&&!rowV.runs.includes(run))rowV.runs.push(run);
-   const startMin=Number(seg.start_min),endMin=Number(seg.end_min);
-   const st=Number.isFinite(startMin)?minToTime(startMin):"",et=Number.isFinite(endMin)?minToTime(endMin):"";
-   const startLoc=renameStop(seg.start_loc||""),endLoc=renameStop(seg.end_loc||"");
-   let lines=[];try{lines=JSON.parse(seg.lines_json||"[]")||[]}catch{}
+   const sm=Number(seg.start_min),em=Number(seg.end_min),st=Number.isFinite(sm)?minToTime(sm):"",et=Number.isFinite(em)?minToTime(em):"";
+   const startLoc=renameStop(seg.start_loc||""),endLoc=renameStop(seg.end_loc||"");let lines=[];try{lines=JSON.parse(seg.lines_json||"[]")||[]}catch{}
    const driverName=String(seg.employee_name||EMP_BY_ID.get(eid)?.name||eid);
    rowV.drivers.push({name:driverName,employeeId:eid,startTime:st,endTime:et,startLoc,endLoc,run,lines});
    if(!rowV.startTime||(st&&st<rowV.startTime)){rowV.startTime=st;rowV.startLoc=startLoc}
    if(!rowV.endTime||(et&&et>rowV.endTime)){rowV.endTime=et;rowV.endLoc=endLoc}
    for(const line of lines)if(line&&!rowV.lines.includes(line))rowV.lines.push(line);
-   byVehicle.set(key,rowV);
  }
-
- const rows=[...byVehicle.values()];
+ const depotAssignments=new Map((depotRes.results||[]).map(a=>[String(a.vehicle_number),a]));
+ const today=berlinDateKey(),nowMin=berlinMinuteOfDay(),rows=[...byVehicle.values()];
  for(const rowV of rows){
    rowV.drivers.sort((a,b)=>a.startTime.localeCompare(b.startTime)||a.endTime.localeCompare(b.endTime));
-   const seen=new Set(),ded=[];
-   for(const x of rowV.drivers){const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))continue;seen.add(k);ded.push(x)}
-   rowV.drivers=ded;rowV.runs=[...new Set(rowV.runs)];rowV.lines=[...new Set(rowV.lines)];
+   const seen=new Set();rowV.drivers=rowV.drivers.filter(x=>{const k=[x.name,x.startTime,x.endTime,x.run,x.startLoc,x.endLoc].join("|");if(seen.has(k))return false;seen.add(k);return true});
+   const vn=String((rowV.vehicle.match(/\d+/)||[""])[0]),a=depotAssignments.get(vn);
+   if(a){rowV.startDepot=a.start_depot||"";rowV.startSlot=a.start_slot||"";rowV.endDepot=a.end_depot||"";rowV.endSlot=a.end_slot||"";rowV.returnSlot=rowV.endSlot;rowV.slotType=a.slot_type||"";rowV.pulloutMin=Number.isFinite(Number(a.pullout_min))?Number(a.pullout_min):null;rowV.pullinMin=Number.isFinite(Number(a.pullin_min))?Number(a.pullin_min):null}
+   if(!rowV.startSlot&&!rowV.endSlot){rowV.locationStatus="Stellplatz noch nicht geplant";rowV.currentSlot="";rowV.currentDepot=""}
+   else if(!rowV.used){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||""}
+   else if(date<today){rowV.locationStatus="Auf Hof · Tagesende";rowV.currentSlot=rowV.endSlot||rowV.startSlot||"";rowV.currentDepot=rowV.endDepot||rowV.startDepot||""}
+   else if(date>today){rowV.locationStatus="Auf Hof · Tagesbeginn";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||""}
+   else{const out=Number.isFinite(rowV.pulloutMin)?rowV.pulloutMin:slotClock(rowV.startTime,0),inn=Number.isFinite(rowV.pullinMin)?rowV.pullinMin:slotClock(rowV.endTime,48*60);if(nowMin<out){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||"";rowV.currentDepot=rowV.startDepot||""}else if(nowMin>=inn){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.endSlot||"";rowV.currentDepot=rowV.endDepot||""}else{rowV.locationStatus="Unterwegs";rowV.currentSlot="";rowV.currentDepot=""}}
  }
-
- const depotAssignments=new Map();
- for(const a of depotRes.results||[])depotAssignments.set(String(a.vehicle_number),{
-   vehicleNumber:String(a.vehicle_number),used:!!a.used,startDepot:a.start_depot||"",startSlot:a.start_slot||"",
-   endDepot:a.end_depot||"",endSlot:a.end_slot||"",returnSlot:a.end_slot||"",slotType:a.slot_type||"",
-   pulloutMin:Number.isFinite(Number(a.pullout_min))?Number(a.pullout_min):null,
-   pullinMin:Number.isFinite(Number(a.pullin_min))?Number(a.pullin_min):null
- });
- const activeVehicleNumbers=new Set(fleet.map(v=>String(v.number)));
- for(const rowV of rows){
-   const vn=String((String(rowV.vehicle).match(/\d+/)||[""])[0]),a=depotAssignments.get(vn);
-   if(!a)continue;
-   rowV.startDepot=a.startDepot;rowV.startSlot=a.startSlot;rowV.endDepot=a.endDepot;rowV.endSlot=a.endSlot;rowV.returnSlot=a.returnSlot;rowV.slotType=a.slotType;rowV.pulloutMin=a.pulloutMin;rowV.pullinMin=a.pullinMin;
- }
-
- const today=berlinDateKey(),nowMin=berlinMinuteOfDay();
- for(const rowV of rows){
-   if(!rowV.startSlot&&!rowV.endSlot){rowV.locationStatus="Stellplatz noch nicht geplant";rowV.currentSlot="";rowV.currentDepot="";continue}
-   if(!rowV.used){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||"";continue}
-   if(date<today){rowV.locationStatus="Auf Hof · Tagesende";rowV.currentSlot=rowV.endSlot||rowV.startSlot||"";rowV.currentDepot=rowV.endDepot||rowV.startDepot||"";continue}
-   if(date>today){rowV.locationStatus="Auf Hof · Tagesbeginn";rowV.currentSlot=rowV.startSlot||rowV.endSlot||"";rowV.currentDepot=rowV.startDepot||rowV.endDepot||"";continue}
-   const out=Number.isFinite(rowV.pulloutMin)?rowV.pulloutMin:slotClock(rowV.startTime,0),inn=Number.isFinite(rowV.pullinMin)?rowV.pullinMin:slotClock(rowV.endTime,48*60);
-   if(nowMin<out){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.startSlot||"";rowV.currentDepot=rowV.startDepot||""}
-   else if(nowMin>=inn){rowV.locationStatus="Auf Hof";rowV.currentSlot=rowV.endSlot||rowV.returnSlot||"";rowV.currentDepot=rowV.endDepot||""}
-   else{rowV.locationStatus="Unterwegs";rowV.currentSlot="";rowV.currentDepot=""}
- }
-
  const filtered=rows.filter(rowV=>{if(!qq)return true;const hay=[rowV.vehicle,rowV.model,rowV.used?"im einsatz":"nicht eingesetzt",rowV.runs.join(" "),rowV.startTime,rowV.endTime,rowV.startLoc,rowV.endLoc,rowV.startSlot,rowV.endSlot,rowV.startDepot,rowV.endDepot,rowV.currentSlot,rowV.currentDepot,rowV.locationStatus,rowV.lines.join(" "),...rowV.drivers.flatMap(x=>[x.name,x.employeeId,x.startTime,x.endTime,x.startLoc,x.endLoc,x.run,(x.lines||[]).join(" ")])].join(" ").toLowerCase();return hay.includes(qq)});
- filtered.sort((a,b)=>{const an=Number((a.vehicle.match(/\d+/)||[999999])[0]),bn=Number((b.vehicle.match(/\d+/)||[999999])[0]);return an-bn||String(a.vehicle).localeCompare(String(b.vehicle),"de",{numeric:true})});
-
- const slotsByDepot={"Betriebshof Mitte":0,"Betriebshof Spryndorf":0,"Betriebshof Hechem":0};
- for(const s of slotRes.results||[]){const depot=slotDepotName(s.depot);slotsByDepot[depot]=(slotsByDepot[depot]||0)+Number(s.slot_count||0)}
- const occupancy={};
- for(const depot of Object.keys(slotsByDepot))occupancy[depot]={parked:rows.filter(r=>!r.used&&r.startDepot===depot).length,starts:rows.filter(r=>r.used&&r.startDepot===depot).length,returns:rows.filter(r=>r.used&&r.endDepot===depot).length,slots:slotsByDepot[depot]};
- const missing=[...activeVehicleNumbers].filter(vn=>{const a=depotAssignments.get(vn);return !a||!String(a.startSlot||"").trim()||!String(a.endSlot||a.returnSlot||"").trim()}).map(Number).filter(Boolean);
- const previewMode=!!meta.root_preview||!!meta.day_preview;
- return{
-   date,rows:filtered,
-   usedVehicles:rows.filter(r=>r.used).length,
-   activeVehicles:rows.length,
-   notUsedVehicles:rows.filter(r=>!r.used).length,
-   depotOccupancy:occupancy,
-   slotCount:Object.values(slotsByDepot).reduce((n,x)=>n+Number(x||0),0),
-   slotReservations:{},slotConflicts:[],
-   depotAssignmentsFixed:activeVehicleNumbers.size>0&&missing.length===0&&!previewMode,
-   previewMode,missingVehicleAssignments:missing,planVersion:Number(meta.version||0)
- };
+ const nextOffset=offset+limit<total?offset+limit:null;
+ return{date,rows:filtered,usedVehicles:rows.filter(r=>r.used).length,activeVehicles:total,notUsedVehicles:Math.max(0,total-rows.filter(r=>r.used).length),total,offset,limit,nextOffset,slotCount:Number(slotCountRes?.c||0),slotReservations:{},slotConflicts:[],depotAssignmentsFixed:true,previewMode:!!meta.root_preview||!!meta.day_preview,missingVehicleAssignments:[],planVersion:Number(meta.version||0)};
 }
 
 const ANNUAL_VACATION_DAYS=30;
@@ -1291,7 +1265,7 @@ async function planDepotDayV6462(env,date){
 async function route(req,env){let url=new URL(req.url),p=url.pathname;
  // Diese beiden Endpunkte MÜSSEN vor ensureSchemaOnce bleiben. Auf einem kalten
  // Worker-Isolat darf der Live-Refresh keine Schema-/Migrationsarbeit auslösen.
- if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.67",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
+ if(p==="/api/health")return json({ok:true,service:"ROGIS Dienstplan",version:"6.4.68",time:new Date().toISOString(),checks:{lightweight:true,weekState:"revision-key"}});
  if(p==="/api/week-state"&&req.method==="GET"){
    const tok=cookieToken(req);
    if(!tok)return json({error:"Nicht angemeldet."},401);
@@ -1368,9 +1342,9 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  if(p==="/api/admin/employees"){let q=(url.searchParams.get("q")||"").toLowerCase(),arr=DATA.employees.filter(e=>!q||[e.name,e.id,e.position,e.bereich,e.standort,e.startDate,e.endDate,e.endReason,apprenticeshipLabel(e)].join(" ").toLowerCase().includes(q)).slice(0,150);return json({employees:arr.map(e=>({id:e.id,name:e.name,position:e.position,startDate:e.startDate||null,endDate:e.endDate||null,lifecycle:employeeLifecycleStatus(e,new Date()),apprenticeYear:apprenticeshipYearForDate(e,new Date())}))})}
  if(p==="/api/admin/personnel-list"&&req.method==="GET"){let q=(url.searchParams.get("q")||"").trim().toLowerCase(),today=parseDateKey(berlinDateKey()),arr=DATA.employees.filter(e=>!q||[e.id,e.name,e.position,e.bereich,e.standort,e.employment,e.birthDate,e.startDate,e.endDate,apprenticeshipLabel(e,today)].join(" ").toLowerCase().includes(q)).sort((a,b)=>a.name.localeCompare(b.name,"de")),ur=await env.DB.prepare(`SELECT employee_id,username FROM users`).all(),um=new Map((ur.results||[]).map(x=>[x.employee_id,x.username]));return json({employees:arr.slice(0,400).map(e=>({id:e.id,name:e.name,position:e.position,businessArea:e.bereich,location:e.standort,employment:e.employment,birthDate:e.birthDate||null,startDate:e.startDate||null,endDate:e.endDate||null,endReason:e.endReason||null,retirementDate:e.birthDate?retirementDateFor(e.birthDate):null,apprenticeYear:apprenticeshipYearForDate(e,today),apprenticeLabel:apprenticeshipLabel(e,today),trainingPhase:apprenticeTrainingState(e,today).phase,mpuDate:apprenticeMilestones(e)?.mpuDate||null,classDExamDate:apprenticeMilestones(e)?.examDate||null,classDPassed:apprenticeTrainingState(e,today).classDPassed,lifecycle:employeeLifecycleStatus(e,today),username:um.get(e.id)||usernameFor(e)})),total:arr.length})}
  if(p==="/api/admin/reset-password"&&req.method==="POST"){let b=await req.json(),eid=String(b.employeeId||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let u=await env.DB.prepare(`SELECT * FROM users WHERE employee_id=?`).bind(eid).first();if(!u){let username=await createInitialUserForEmployee(e,env);u=await env.DB.prepare(`SELECT * FROM users WHERE username=?`).bind(username).first()}let salt=b64(crypto.getRandomValues(new Uint8Array(16))),ph=await pwHash(INIT_PASSWORD,salt),now=new Date().toISOString();await env.DB.prepare(`UPDATE users SET password_hash=?,salt=?,must_change=1,updated_at=? WHERE username=?`).bind(ph,salt,now,u.username).run();await env.DB.prepare(`DELETE FROM sessions WHERE username=?`).bind(u.username).run();return json({ok:true,username:u.username,message:`Passwort von ${e.name} wurde auf ${INIT_PASSWORD} zurückgesetzt. Beim nächsten Login muss ein neues Passwort vergeben werden.`})}
- if(p==="/api/admin/employee-week"){let mk=url.searchParams.get("monday"),eid=url.searchParams.get("employeeId"),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(await userWeek(plan,e,env))}
- if(p==="/api/admin/day"){let date=url.searchParams.get("date"),q=url.searchParams.get("q")||"",mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);if(!plan)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json({rows:await dayRows(plan,date,q,env)})}
- if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",mk=dateKey(mondayOf(parseDateKey(date))),result=await vehicleDayRowsLite(env,mk,date,q);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
+ if(p==="/api/admin/employee-week"){let mk=String(url.searchParams.get("monday")||""),eid=String(url.searchParams.get("employeeId")||""),e=EMP_BY_ID.get(eid);if(!e)return json({error:"Mitarbeiter nicht gefunden."},404);let week=await userWeekLite(env,mk,e);if(!week)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(week,200,{"cache-control":"no-store"})}
+ if(p==="/api/admin/day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||40),mk=dateKey(mondayOf(parseDateKey(date))),result=await dayRowsLite(env,mk,date,q,offset,limit);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
+ if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||60),mk=dateKey(mondayOf(parseDateKey(date))),result=await vehicleDayRowsLite(env,mk,date,q,offset,limit);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
  if(p==="/api/admin/summary"){let mk=url.searchParams.get("monday"),plan=await loadExistingWeek(env,mk),o=await env.DB.prepare(`SELECT COUNT(*) c FROM objections WHERE status='offen'`).first();let today=new Date(),active=DATA.employees.filter(e=>employeeActiveOn(e,today));return json({staff:active.length,drivers:active.filter(e=>e.bereich==="Fahrdienst").length,openObjections:o?.c||0,version:Number(plan?.version||0)})}
  if(p==="/api/admin/objections"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE status IN ('offen','info') ORDER BY CASE WHEN status='info' THEN 0 ELSE 1 END, created_at ASC LIMIT 200`).all();return json({items:r.results||[]})}
  if(p.startsWith("/api/admin/vacation-request/")&&p.endsWith("/approve")&&req.method==="POST"){
