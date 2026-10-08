@@ -264,3 +264,22 @@ details.detail-pop>:not(summary),details[open] .detail-content{animation:details
 @media(prefers-reduced-motion:reduce){
  .hero-slide,.hero-copy-inner,.feature-photo img,.mosaic-card img,.portal-module-tile,.card,.button,.reveal,.reveal.is-visible{transition:none!important;animation:none!important;transform:none!important}
 }
+
+
+/* ROGIS dynamic hero compatibility */
+.hero-slide.active{opacity:1;transform:scale(1);z-index:2}
+.hero-dot.active{width:28px;background:var(--orange)}
+.hero-slide .photo-caption{position:absolute;right:26px;bottom:28px;z-index:3;background:rgba(7,25,87,.76);color:#fff;padding:9px 13px;border-radius:999px;font-size:.78rem;letter-spacing:.02em;backdrop-filter:blur(10px)}
+.hero-dots{position:absolute;left:28px;bottom:28px;z-index:6;display:flex;gap:7px;padding:10px 12px;border-radius:999px;background:rgba(5,16,55,.58);backdrop-filter:blur(12px)}
+.hero-facts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:4px}
+.hero-facts>div{padding:13px 14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);border-radius:14px;backdrop-filter:blur(8px)}
+.hero-facts strong{display:block;font-size:1.32rem;color:#fff}
+.hero-facts span{display:block;margin-top:2px;font-size:.76rem;color:#dce5ff}
+.ghost-light{background:transparent!important;border:1px solid rgba(255,255,255,.38)!important;color:#fff!important}
+.ghost-light:hover{background:#fff!important;color:var(--blue)!important}
+.copy-swap #hero-eyebrow,.copy-swap #hero-title,.copy-swap #hero-copy,.copy-swap #hero-cta{animation:heroCopyIn .55s cubic-bezier(.2,.8,.2,1)}
+@keyframes heroCopyIn{from{opacity:0;transform:translateY(15px)}to{opacity:1;transform:none}}
+.pagebody>.grid,.pagebody>.split,.pagebody>.details,.pagebody>.editorial{animation:pageIn .42s ease both}
+@keyframes pageIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@media(max-width:780px){.hero-facts{grid-template-columns:1fr 1fr}.hero-facts>div:last-child{grid-column:1/-1}.hero-dots{left:18px;bottom:18px}.hero-slide .photo-caption{right:18px;bottom:18px}}
+@media(prefers-reduced-motion:reduce){.hero-slide,.hero-dot,.copy-swap #hero-eyebrow,.copy-swap #hero-title,.copy-swap #hero-copy,.copy-swap #hero-cta,.pagebody>.grid,.pagebody>.split,.pagebody>.details,.pagebody>.editorial{transition:none!important;animation:none!important}}
