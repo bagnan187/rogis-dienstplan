@@ -1,4 +1,4 @@
-import {data,heroPhotos,path,esc,icon,btn,photo,card,page,publicForm} from './shared.js';
+import {data,heroPhotos,aushangIndex,path,esc,icon,btn,photo,card,page,publicForm} from './shared.js';
 const fleetImage=(n,alt,cls='')=>`<img class="${cls}" src="/assets/fleet/${n}.webp" alt="${esc(alt)}" loading="lazy">`;
 const fleetShowcase=[
  ['1512',"MAN Lion's City A23 3D",'2015','Im Betrieb'],['1516',"MAN Lion's City A23 3D",'2015','Im Betrieb'],
@@ -60,13 +60,26 @@ function lineModel(line){
   if(!reverse)reverse=variants[1];
   return{variants,directions:[primary,reverse].filter((x,i,a)=>x&&a.indexOf(x)===i),start,end,via:importantStops(primary.stops)};
 }
+function posterDirection(line,p){
+ const entry=aushangIndex[String(line)];
+ if(!entry?.directions)return null;
+ const stops=p.stops||[];
+ const score=order=>{let pos=-1,total=0;for(const stop of stops){const i=order.indexOf(stop,pos+1);if(i>=0){total++;pos=i}}return total};
+ return Object.entries(entry.directions).map(([id,d])=>({id,d,score:score(d.order||[])})).sort((a,b)=>b.score-a.score)[0]||null;
+}
+function posterForStop(line,p,stop){
+ const entry=aushangIndex[String(line)],dir=posterDirection(line,p);
+ const hit=dir?.d?.pages?.[stop];
+ return hit&&entry?{pdf:entry.pdf,page:hit.page,format:hit.format,direction:dir.id}:null;
+}
 function routeTimeline(p,n){
-  return `<section class="route-direction"><div class="route-direction-head"><span class="linebadge">${esc(n)}</span><div><small>Richtung</small><h3>${esc(p.destination||p.stops.at(-1))}</h3></div></div><ol class="timeline route-timeline">${p.stops.map((x,i)=>`<li class="${i===0||i===p.stops.length-1?'terminus':''}"><span>${esc(x)}</span></li>`).join('')}</ol></section>`;
+ const dir=posterDirection(n,p),entry=aushangIndex[String(n)];
+ return `<section class="route-direction"><div class="route-direction-head"><span class="linebadge">${esc(n)}</span><div><small>Richtung</small><h3>${esc(p.destination||p.stops.at(-1))}</h3></div></div><ol class="timeline route-timeline">${p.stops.map((x,i)=>{const a=posterForStop(n,p,x);return `<li class="${i===0||i===p.stops.length-1?'terminus':''}">${a?`<a class="stop-aushang-link" href="/fahrplaene/aushang/${encodeURIComponent(a.pdf)}#page=${a.page}" target="_blank" rel="noopener" title="Fahrplanaushang ${esc(x)} · Richtung ${esc(p.destination||p.stops.at(-1))} als PDF öffnen"><span>${esc(x)}</span><small>Fahrplanaushang · PDF · Seite ${a.page}</small></a>`:`<span>${esc(x)}</span>`}</li>`}).join('')}</ol>${entry&&dir?`<div class="route-pdf-note">${icon('document')}<span>Haltestellen mit PDF-Hinweis öffnen den passenden Aushang direkt auf der zugehörigen Seite.</span></div>`:''}</section>`;
 }
 function lineOverview(line){
-  const m=lineModel(line),variantCount=m.variants.length;
+  const m=lineModel(line),variantCount=m.variants.length,poster=aushangIndex[String(line.number)];
   const via=m.via.length?`<span class="line-via">über ${m.via.map(esc).join(' · ')}</span>`:'';
-  return `<article class="line-overview" data-line-card data-number="${esc(line.number)}" data-kind="${lineKind(line.number)}"><button class="line-overview-trigger" type="button" data-line-toggle aria-expanded="false"><span class="linebadge large">${esc(line.number)}</span><span class="line-overview-copy"><strong>${esc(m.start)} <span class="route-arrow">↔</span> ${esc(m.end)}</strong>${via}</span><span class="line-overview-meta">${variantCount} ${variantCount===1?'Fahrtverlauf':'Streckenvarianten'}</span><span class="line-chevron" aria-hidden="true"></span></button><div class="line-expand"><div class="line-expand-inner"><div class="route-grid">${m.directions.map(p=>routeTimeline(p,line.number)).join('')}</div>${variantCount>m.directions.length?`<div class="route-more"><span>${variantCount-m.directions.length} weitere Streckenvarianten vorhanden.</span><a class="textlink" href="/linien/${encodeURIComponent(line.number)}/">Alle Varianten der Linie ${esc(line.number)} anzeigen</a></div>`:''}<div class="route-actions">${btn(data.fahrinfo,'Fahrt in der Fahrinfo planen','button orange')}<a class="button outline" href="/linien/${encodeURIComponent(line.number)}/">Linienseite öffnen</a></div></div></div></article>`;
+  return `<article class="line-overview" data-line-card data-number="${esc(line.number)}" data-kind="${lineKind(line.number)}"><button class="line-overview-trigger" type="button" data-line-toggle aria-expanded="false"><span class="linebadge large">${esc(line.number)}</span><span class="line-overview-copy"><strong>${esc(m.start)} <span class="route-arrow">↔</span> ${esc(m.end)}</strong>${via}</span><span class="line-overview-meta">${variantCount} ${variantCount===1?'Fahrtverlauf':'Streckenvarianten'}</span><span class="line-chevron" aria-hidden="true"></span></button><div class="line-expand"><div class="line-expand-inner"><div class="route-grid">${m.directions.map(p=>routeTimeline(p,line.number)).join('')}</div>${variantCount>m.directions.length?`<div class="route-more"><span>${variantCount-m.directions.length} weitere Streckenvarianten vorhanden.</span><a class="textlink" href="/linien/${encodeURIComponent(line.number)}/">Alle Varianten der Linie ${esc(line.number)} anzeigen</a></div>`:''}<div class="route-actions">${poster?`<a class="button outline pdf-button" href="/fahrplaene/aushang/${encodeURIComponent(poster.pdf)}" target="_blank" rel="noopener">${icon('document')} Aushänge Linie ${esc(line.number)} (PDF)</a>`:''}${btn(data.fahrinfo,'Fahrt in der Fahrinfo planen','button orange')}<a class="button outline" href="/linien/${encodeURIComponent(line.number)}/">Linienseite öffnen</a></div></div></div></article>`;
 }
 function lines(){return page('Linien & Netz','Endhaltestellen, wichtige Punkte und der komplette Fahrtverlauf – direkt in der Übersicht.',`<div class="filters line-filters"><label>Linie oder Haltestelle suchen<input id="lineq" type="search" placeholder="Zum Beispiel 26 oder Kurhaus/Theater"></label><label>Netz<select id="linetype"><option value="all">Alle Linien</option><option value="day">Tageslinien</option><option value="night">Nachtlinien</option><option value="regional">Regional- & Schnellbus</option><option value="extra">Einsatzwagen</option></select></label></div><p id="linecount" class="muted line-count"></p><div id="linelist" class="line-list">${data.lines.map(lineOverview).join('')}</div>`,'Fahrgäste')}
 function stopNames(){const rows=Object.entries(data.renames).sort((a,b)=>a[1].localeCompare(b[1],'de'));return page('Haltestellennamen','Nachschlagen, wie eine bisherige Haltestelle heute heißt.',`<div class="filters"><label>Name suchen<input id="stopq" type="search" placeholder="Alter oder neuer Haltestellenname"></label></div><div class="tablewrap"><table><thead><tr><th>Bisheriger Name</th><th>Aktueller Name</th></tr></thead><tbody id="stops">${rows.map(([o,n])=>`<tr><td>${esc(o)}</td><td><strong>${esc(n)}</strong></td></tr>`).join('')}</tbody></table></div>`,'Fahrgäste')}
