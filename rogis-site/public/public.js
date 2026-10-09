@@ -88,18 +88,36 @@ function posterDirection(line,p){
  const score=order=>{const norm=(order||[]).map(posterStopKey);let pos=-1,total=0;for(const stop of stops){const i=norm.indexOf(stop,pos+1);if(i>=0){total++;pos=i}}return total};
  return Object.entries(entry.directions).map(([id,d])=>({id,d,score:score(d.order||[])})).sort((a,b)=>b.score-a.score)[0]||null;
 }
-function posterForStop(line,p,stop){
+function posterOptions(line,p,stop){
  const entry=aushangFilesReady?aushangIndex[String(line)]:null,dir=posterDirection(line,p);
- if(!entry||!dir?.d?.pages)return null;
- const pages=dir.d.pages;
- let key=Object.prototype.hasOwnProperty.call(pages,stop)?stop:null;
- if(!key){const wanted=posterStopKey(stop);key=Object.keys(pages).find(k=>posterStopKey(k)===wanted)||null}
- const hit=key?pages[key]:null;
- return hit?{pdf:entry.pdf,page:hit.page,format:hit.format,direction:dir.id,posterStop:key}:null;
+ if(!entry||!dir?.d)return[];
+ const wanted=posterStopKey(stop),destination=p.destination||p.stops.at(-1)||'';
+ const pp=dir.d.platformPages||{};
+ const platformKey=Object.keys(pp).find(k=>posterStopKey(k)===wanted);
+ let options=platformKey?[...(pp[platformKey]||[])]:[];
+ const dkey=posterStopKey(destination);
+ if(options.length>1&&dkey){
+   const score=o=>{const ok=posterStopKey(o.destination||'');if(!ok)return 0;if(ok===dkey)return 4;if(ok.includes(dkey)||dkey.includes(ok))return 3;const oa=ok.split(' '),da=dkey.split(' '),common=oa.filter(x=>x.length>3&&da.includes(x)).length;return common>=2?2:common};
+   const best=Math.max(...options.map(score));
+   if(best>0)options=options.filter(o=>score(o)===best);
+ }
+ if(!options.length){
+   const pages=dir.d.pages||{};
+   let key=Object.prototype.hasOwnProperty.call(pages,stop)?stop:Object.keys(pages).find(k=>posterStopKey(k)===wanted);
+   if(key){
+     const hits=Array.isArray(pages[key])?pages[key]:[pages[key]];
+     options=hits.map((hit,i)=>({label:hits.length>1?`Aushang ${i+1}`:'Haltestelle',stopLabel:key,destination,pdf:entry.pdf,page:hit.page,format:hit.format,filtered:false}));
+   }
+ }
+ return options.map((o,i)=>({...o,direction:dir.id,label:o.label||(`Halteplatz ${i+1}`)}));
+}
+function posterDownloadButton(n,stop,destination,o,labelOnly=false){
+ const dl=`ROGIS_Linie_${n}_${stop}_${o.label||'Haltestelle'}_Richtung_${o.destination||destination}.pdf`;
+ return `<button class="aushang-option${labelOnly?' compact':''}" type="button" data-aushang-download data-pdf="/fahrplaene/aushang/${encodeURIComponent(o.pdf)}" data-page="${o.page}" data-filename="${esc(dl)}" title="Fahrplanaushang ${esc(stop)} · ${esc(o.label||'Haltestelle')} herunterladen"><span class="aushang-option-title">${esc(o.label||'Haltestelle')}</span><small>${esc(o.destination||destination)} · PDF herunterladen</small></button>`;
 }
 function routeTimeline(p,n){
  const dir=posterDirection(n,p),entry=aushangFilesReady?aushangIndex[String(n)]:null,destination=p.destination||p.stops.at(-1);
- return `<section class="route-direction"><div class="route-direction-head"><span class="linebadge">${esc(n)}</span><div><small>Richtung</small><h3>${esc(destination)}</h3></div></div><ol class="timeline route-timeline">${p.stops.map((x,i)=>{const a=posterForStop(n,p,x);const dl=`ROGIS_Linie_${n}_${x}_Richtung_${destination}.pdf`;return `<li class="${i===0||i===p.stops.length-1?'terminus':''}">${a?`<button class="stop-aushang-link" type="button" data-aushang-download data-pdf="/fahrplaene/aushang/${encodeURIComponent(a.pdf)}" data-page="${a.page}" data-filename="${esc(dl)}" title="Fahrplanaushang ${esc(x)} · Richtung ${esc(destination)} herunterladen"><span>${esc(x)}</span><small>Einzelnen Fahrplanaushang als PDF herunterladen</small></button>`:`<span>${esc(x)}</span>`}</li>`}).join('')}</ol>${entry&&dir?`<div class="route-pdf-note">${icon('document')}<span>Auf eine Haltestelle klicken, um genau diesen Aushang für diese Richtung als einzelne PDF-Datei herunterzuladen.</span></div>`:''}</section>`;
+ return `<section class="route-direction"><div class="route-direction-head"><span class="linebadge">${esc(n)}</span><div><small>Richtung</small><h3>${esc(destination)}</h3></div></div><ol class="timeline route-timeline">${p.stops.map((x,i)=>{const opts=posterOptions(n,p,x);if(!opts.length)return `<li class="${i===0||i===p.stops.length-1?'terminus':''}"><span>${esc(x)}</span></li>`;if(opts.length===1){const o=opts[0],dl=`ROGIS_Linie_${n}_${x}_${o.label||'Haltestelle'}_Richtung_${o.destination||destination}.pdf`;return `<li class="${i===0||i===p.stops.length-1?'terminus':''}"><button class="stop-aushang-link" type="button" data-aushang-download data-pdf="/fahrplaene/aushang/${encodeURIComponent(o.pdf)}" data-page="${o.page}" data-filename="${esc(dl)}" title="Fahrplanaushang ${esc(x)} herunterladen"><span>${esc(x)}</span><small>${o.label&&o.label!=='Haltestelle'?`${esc(o.label)} · `:''}Einzelnen Fahrplanaushang herunterladen</small></button></li>`;}return `<li class="${i===0||i===p.stops.length-1?'terminus':''} platform-choice-item"><details class="stop-platform-choice"><summary><span>${esc(x)}</span><small>${opts.length} Halteplätze · auswählen</small></summary><div class="aushang-options">${opts.map(o=>posterDownloadButton(n,x,destination,o)).join('')}</div></details></li>`;}).join('')}</ol>${entry&&dir?`<div class="route-pdf-note">${icon('document')}<span>Haltestelle antippen und den passenden Aushang herunterladen. Gibt es mehrere Steige oder Halteplätze, können Sie den richtigen Abfahrtsort auswählen.</span></div>`:''}</section>`;
 }
 function lineOverview(line){
   const m=lineModel(line),variantCount=m.variants.length,poster=aushangFilesReady?aushangIndex[String(line.number)]:null;
