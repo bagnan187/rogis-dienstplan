@@ -110,6 +110,18 @@ const debounce=(fn,ms=350)=>{let t;return(...args)=>{clearTimeout(t);t=setTimeou
 let me=null, monday=null, currentWeek=null, selectedAdminEmployee=null,lastWeekState=null,refreshBusy=false,liveTimer=null,dayLoadController=null,vehicleLoadController=null;
 const pad=n=>String(n).padStart(2,'0'); const dk=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 function mondayOf(d){d=new Date(d.getFullYear(),d.getMonth(),d.getDate());d.setDate(d.getDate()-((d.getDay()+6)%7));return d} function addDays(d,n){let x=new Date(d);x.setDate(x.getDate()+n);return x}
+function preferredDayForWeek(){
+  if(!monday)return dk(new Date());
+  const today=dk(new Date()),first=dk(monday),last=dk(addDays(monday,6));
+  return today>=first&&today<=last?today:first;
+}
+function fillWeekDaySelect(el){
+  if(!el||!monday)return;
+  const old=el.value,preferred=preferredDayForWeek();
+  el.innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i),key=dk(d);return `<option value="${key}">${fdate(key)}</option>`}).join('');
+  if(old&&[...el.options].some(o=>o.value===old))el.value=old;
+  else if([...el.options].some(o=>o.value===preferred))el.value=preferred;
+}
 function fdate(s){let d=new Date(s+'T12:00:00');return d.toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})} function flong(d){return d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})}
 async function api(path,opt={}){let ctl=new AbortController(),timer=setTimeout(()=>ctl.abort(),15000);try{let r=await fetch(path,{credentials:'include',cache:'no-store',headers:{'Content-Type':'application/json',...(opt.headers||{})},signal:opt.signal||ctl.signal,...opt});let txt=await r.text(),j={};try{j=txt?JSON.parse(txt):{}}catch{let html=/<!doctype html|<html/i.test(txt||'');let limit=html&&/1102|Worker exceeded resource limits/i.test(txt||'');j={error:limit?'Cloudflare Worker-Limit (1102). Bitte den Vorgang erneut versuchen; die Seite hat die Serverantwort abgefangen.':html?('Server lieferte eine HTML-Fehlerseite (HTTP '+r.status+').'):txt||('HTTP '+r.status)}}if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j}finally{clearTimeout(timer)}}
 function setTab(name){$$('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));['mine','all','vehicles','objections','admin'].forEach(x=>$('#tab-'+x).classList.toggle('hidden',x!==name));if(name==='mine')loadMine(true);if(name==='all')loadAdminAll();if(name==='vehicles')loadVehicleOverview();if(name==='objections')loadObjections();if(name==='admin')loadAdmin();}
@@ -148,7 +160,7 @@ async function searchEmployees(){if(me.role!=='admin')return;let q=$('#employeeS
 async function loadAdminEmployee(){if(!selectedAdminEmployee)return;let j=await api('/api/admin/employee-week?monday='+dk(monday)+'&employeeId='+encodeURIComponent(selectedAdminEmployee));$('#adminEmployeeCalendar').innerHTML=calHtml(j.days);bindSegments('#adminEmployeeCalendar')}
 async function loadAdminDay(){
  if(dayLoadController)dayLoadController.abort();dayLoadController=new AbortController();const ctl=dayLoadController;
- let date=$('#daySelect').value||dk(monday),q=$('#daySearch').value.trim(),offset=0,rows=[];
+ let date=$('#daySelect').value||preferredDayForWeek(),q=$('#daySearch').value.trim(),offset=0,rows=[];
  $('#dayBody').innerHTML='<tr><td colspan="7" class="small">Tagesübersicht wird blockweise geladen …</td></tr>';
  try{
    for(;;){
@@ -160,12 +172,12 @@ async function loadAdminDay(){
    }
  }catch(e){if(e?.name!=='AbortError')$('#dayBody').innerHTML=`<tr><td colspan="7" class="small">${e.message}</td></tr>`}
 }
-async function loadAdminAll(){if(me.role!=='admin')return;$('#daySelect').innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i);return `<option value="${dk(d)}">${fdate(dk(d))}</option>`}).join('');await searchEmployees();await Promise.all([loadAdminEmployee(),loadAdminDay()])}
-function fillVehicleDay(){let el=$('#vehicleDaySelect');if(!el)return;let old=el.value;el.innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i),key=dk(d);return `<option value="${key}">${fdate(key)}</option>`}).join('');if(old&&[...el.options].some(o=>o.value===old))el.value=old}
+async function loadAdminAll(){if(me.role!=='admin')return;fillWeekDaySelect($('#daySelect'));await searchEmployees();await Promise.all([loadAdminEmployee(),loadAdminDay()])}
+function fillVehicleDay(){fillWeekDaySelect($('#vehicleDaySelect'))}
 async function loadVehicleOverview(){
  if(me.role!=='admin')return;
  if(vehicleLoadController)vehicleLoadController.abort();vehicleLoadController=new AbortController();const ctl=vehicleLoadController;
- fillVehicleDay();let date=$('#vehicleDaySelect').value||dk(monday),q=$('#vehicleSearch').value.trim(),offset=0,rows=[],used=0,total=0,slotCount=0,previewMode=false;
+ fillVehicleDay();let date=$('#vehicleDaySelect').value||preferredDayForWeek(),q=$('#vehicleSearch').value.trim(),offset=0,rows=[],used=0,total=0,slotCount=0,previewMode=false;
  $('#vehicleDayBody').innerHTML='<tr><td colspan="11" class="small">Wageneinsatz wird blockweise geladen …</td></tr>';
  try{
    for(;;){
@@ -179,9 +191,9 @@ async function loadVehicleOverview(){
    }
  }catch(e){if(e?.name!=='AbortError')$('#vehicleDayBody').innerHTML=`<tr><td colspan="11" class="small">${e.message}</td></tr>`}
 }
-function fillGenerationDay(){let el=$('#generationDay');if(!el)return;let old=el.value;el.innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i),key=dk(d);return `<option value="${key}">${fdate(key)}</option>`}).join('');if(old&&[...el.options].some(o=>o.value===old))el.value=old}
-function fillIndividualGenerationDay(){let el=$('#individualGenerationDay');if(!el)return;let old=el.value;el.innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i),key=dk(d);return `<option value="${key}">${fdate(key)}</option>`}).join('');if(old&&[...el.options].some(o=>o.value===old))el.value=old}
-function fillDutySwapDay(){let el=$('#dutySwapDate');if(!el)return;let old=el.value;el.innerHTML=Array.from({length:7},(_,i)=>{let d=addDays(monday,i),key=dk(d);return `<option value="${key}">${fdate(key)}</option>`}).join('');if(old&&[...el.options].some(o=>o.value===old))el.value=old}
+function fillGenerationDay(){fillWeekDaySelect($('#generationDay'))}
+function fillIndividualGenerationDay(){fillWeekDaySelect($('#individualGenerationDay'))}
+function fillDutySwapDay(){fillWeekDaySelect($('#dutySwapDate'))}
 async function searchDutySwapPersons(side){
  const q=$('#dutySwapSearch'+side).value.trim(),sel=$('#dutySwapPerson'+side),old=sel.value;
  try{
