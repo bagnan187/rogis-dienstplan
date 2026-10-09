@@ -60,17 +60,42 @@ function lineModel(line){
   if(!reverse)reverse=variants[1];
   return{variants,directions:[primary,reverse].filter((x,i,a)=>x&&a.indexOf(x)===i),start,end,via:importantStops(primary.stops)};
 }
+function posterStopKey(name){
+ let x=String(name||'').trim().toLocaleLowerCase('de-DE').normalize('NFKC');
+ x=x.replace(/ß/g,'ss')
+   .replace(/\bstr(?:asse|aße)?\.?\b/g,'strasse')
+   .replace(/\bmarktpl\.?\b/g,'marktplatz')
+   .replace(/\bpl\.?\b/g,'platz')
+   .replace(/\bbf\.?\b/g,'bahnhof')
+   .replace(/\bhbf\.?\b/g,'hauptbahnhof')
+   .replace(/\bnordbf\.?\b/g,'nordbahnhof')
+   .replace(/\bgymn\.?\b/g,'gymnasium')
+   .replace(/\being\.?\b/g,'eingang')
+   .replace(/\bdt\.?\b/g,'deutschen')
+   .replace(/\bsprynd\.?\b/g,'spryndorf')
+   .replace(/\bschulz\.?\b/g,'schulzentrum')
+   .replace(/\briedingb\.?\b/g,'riedingborn')
+   .replace(/\btascherp\.?\b/g,'tascherplatz')
+   .replace(/[.,;:()]/g,' ')
+   .replace(/[\s\-\/]+/g,' ')
+   .trim();
+ return x;
+}
 function posterDirection(line,p){
  const entry=aushangFilesReady?aushangIndex[String(line)]:null;
  if(!entry?.directions)return null;
- const stops=p.stops||[];
- const score=order=>{let pos=-1,total=0;for(const stop of stops){const i=order.indexOf(stop,pos+1);if(i>=0){total++;pos=i}}return total};
+ const stops=(p.stops||[]).map(posterStopKey);
+ const score=order=>{const norm=(order||[]).map(posterStopKey);let pos=-1,total=0;for(const stop of stops){const i=norm.indexOf(stop,pos+1);if(i>=0){total++;pos=i}}return total};
  return Object.entries(entry.directions).map(([id,d])=>({id,d,score:score(d.order||[])})).sort((a,b)=>b.score-a.score)[0]||null;
 }
 function posterForStop(line,p,stop){
  const entry=aushangFilesReady?aushangIndex[String(line)]:null,dir=posterDirection(line,p);
- const hit=dir?.d?.pages?.[stop];
- return hit&&entry?{pdf:entry.pdf,page:hit.page,format:hit.format,direction:dir.id}:null;
+ if(!entry||!dir?.d?.pages)return null;
+ const pages=dir.d.pages;
+ let key=Object.prototype.hasOwnProperty.call(pages,stop)?stop:null;
+ if(!key){const wanted=posterStopKey(stop);key=Object.keys(pages).find(k=>posterStopKey(k)===wanted)||null}
+ const hit=key?pages[key]:null;
+ return hit?{pdf:entry.pdf,page:hit.page,format:hit.format,direction:dir.id,posterStop:key}:null;
 }
 function routeTimeline(p,n){
  const dir=posterDirection(n,p),entry=aushangFilesReady?aushangIndex[String(n)]:null,destination=p.destination||p.stops.at(-1);
