@@ -308,3 +308,16 @@ details.detail-pop>:not(summary),details[open] .detail-content{animation:details
 .pdf-button{display:inline-flex;align-items:center;gap:8px}
 .pdf-button .icon{width:19px;height:19px}
 @media(max-width:700px){.stop-aushang-link{align-items:flex-start;flex-direction:column;gap:2px}.stop-aushang-link small{white-space:normal}}
+
+.stop-platform-choice{margin:-7px -8px;border-radius:12px}
+.stop-platform-choice>summary{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:8px;border-radius:10px;cursor:pointer;list-style:none;transition:background .2s ease}
+.stop-platform-choice>summary::-webkit-details-marker{display:none}
+.stop-platform-choice>summary:hover,.stop-platform-choice[open]>summary{background:#eef3ff}
+.stop-platform-choice>summary small{color:var(--blue);font-size:.72rem;font-weight:750}
+.aushang-options{display:grid;gap:7px;margin:8px 0 4px;padding:8px;background:#f7f9fd;border-radius:12px}
+.aushang-option{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:#fff;color:var(--text);font:inherit;text-align:left;cursor:pointer;transition:border-color .2s ease,transform .2s ease,box-shadow .2s ease}
+.aushang-option:hover,.aushang-option:focus-visible{border-color:#9fb1ea;transform:translateY(-1px);box-shadow:0 6px 18px rgba(7,25,87,.08);outline:none}
+.aushang-option-title{font-weight:800;color:var(--blue)}
+.aushang-option small{color:var(--muted);font-size:.74rem;text-align:right}
+.platform-choice-item:has(details[open]){padding-bottom:8px}
+@media(max-width:700px){.stop-platform-choice>summary,.aushang-option{align-items:flex-start;flex-direction:column;gap:3px}.aushang-option small{text-align:left}}
