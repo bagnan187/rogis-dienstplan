@@ -1091,7 +1091,7 @@ async function dayRowsLite(env,mondayKey,date,q,offset=0,limit=40){
    if(segs.length)day.assignments[id]=segs;
    const effective=normalizeStopNames(applyOverride(statusForEmployee(emp,d,day,cfg),ovMap.get(id)));
    const summary=effective.segments?.length?effective.segments.map(x=>`${x.run} / ${x.vehicle}`).join(" · "):"";
-   const row={id:emp.id,name:emp.name,dutyType:effective.dutyType,status:effective.status,depot:effective.depot,serviceTime:effective.serviceTime,summary,manual:!!effective.manual,note:effective.note||""};
+   const row={id:emp.id,name:emp.name,dutyType:effective.dutyType,status:effective.status,depot:effective.depot,serviceTime:effective.serviceTime,summary,manual:!!effective.manual,note:effective.note||"",canRemove:!ovMap.has(id)&&segs.length>0&&!segs.some(s=>s.trainingRide||s.trainingPassengers?.length||s.trainingPassengerNotes?.length)};
    if(!qq||Object.values(row).join(" ").toLowerCase().includes(qq))rows.push(row);
    if(segs.length)day.assignments[id]=[{}];
  }
