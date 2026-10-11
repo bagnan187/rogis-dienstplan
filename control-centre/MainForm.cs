@@ -220,10 +220,11 @@ public sealed class MainForm : Form
         SaveConfig();
         using var api=new DienstplanApi(_cfg);
         var date=_date.Value.Date;
-        var aiTask=api.GetAiDayAsync(date);
-        var depotTask=api.GetDepotDayAsync(date);
-        await Task.WhenAll(aiTask,depotTask);
-        Render(await aiTask,await depotTask,null);
+        // KI und Depot bewusst sequenziell laden: keine zwei gleichzeitig
+        // aufwendigen Worker-/D1-Abfragen bei Statusaktualisierung.
+        var ai=await api.GetAiDayAsync(date);
+        var depot=await api.GetDepotDayAsync(date);
+        Render(ai,depot,null);
     }
 
     async Task SyncAndWriteAsync()
