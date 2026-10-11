@@ -70,7 +70,7 @@ for (const obsolete of ['hash(az.id+dk+"ride-v642")%5!==0','if(rideCount>=2)brea
 const namedStaffRules = [
   ['"name":"Mehmet Ötegen"', 'Mehmet Ötegen ist als Mitarbeiter hinterlegt'],
   ['"position":"Busfahrer","bereich":"Fahrdienst","standort":"Mitte"', 'Mehmet ist als Fahrdienst-Mitarbeiter angelegt'],
-  ['"staffCount":1592', 'Personalstammzahl wurde auf 1592 erhöht'],
+  ['"staffCount":698', 'Personalstamm ist auf 698 feste Mitarbeiter reduziert'],
   ['birthDateManualMissing', 'für Mehmet wird kein erfundenes Geburtsdatum erzwungen'],
 ];
 for (const [needle, label] of namedStaffRules) {
