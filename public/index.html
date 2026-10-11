@@ -181,7 +181,7 @@ async function loadAdminDay(){
      if(ctl.signal.aborted)return;
      rows.push(...(j.rows||[]));
      $('#dayBody').innerHTML=rows.map(r=>`<tr><td><b>${r.name}</b><div class="small">${r.id}${r.manual?' · manuell':''}</div></td><td>${r.dutyType}</td><td>${r.depot||'—'}</td><td>${r.serviceTime||'—'}</td><td>${r.summary||r.note||'—'}</td><td>${r.status}</td><td><button class="btn light" onclick="editDuty('${r.id}','${r.name.replace(/'/g,"\'")}','${date}')">Bearbeiten</button>${r.canRemove?removeDutyButton(r,date):""}</td></tr>`).join('');
-     $('#dayBody button[data-remove-id]').forEach(btn=>btn.onclick=()=>removeDuty(btn.dataset.removeId,btn.dataset.removeDate));
+     $$('#dayBody button[data-remove-id]').forEach(btn=>btn.onclick=()=>removeDuty(btn.dataset.removeId,btn.dataset.removeDate));
      if(j.nextOffset===null||j.nextOffset===undefined)break;offset=Number(j.nextOffset);
    }
  }catch(e){if(e?.name!=='AbortError')$('#dayBody').innerHTML=`<tr><td colspan="7" class="small">${e.message}</td></tr>`}
