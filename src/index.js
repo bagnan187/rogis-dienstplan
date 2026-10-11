@@ -1404,6 +1404,27 @@ async function openOmsiDayPayloadLiteV6470(env,mondayKey,date){
  };
 }
 
+// Live-Payloads laden nur die benoetigten Teildaten aus dem bereits gespeicherten
+// Wochenplan. Kein kompletter 7-Tage-JSON-Transfer in den Worker und keine
+// D1-Materialisierung / Schreiboperationen bei wiederholten Control-Centre-GETs.
+async function openOmsiDayPayloadProjectedV6480(env,mondayKey,date){
+ const path='$."days"."'+date+'".runInfo';
+ const row=await env.DB.prepare("SELECT version,json_extract(plan_json,?) run_info FROM week_plans WHERE monday=?").bind(path,mondayKey).first();
+ if(!row)return null;
+ const runInfo=parseJsonCell(row.run_info,{});
+ return openOmsiDayPayload({version:Number(row.version||0),days:{[date]:{runInfo}}},date);
+}
+
+async function openOmsiDepotDayPayloadProjectedV6480(env,mondayKey,date){
+ const path='$."days"."'+date+'"';
+ const row=await env.DB.prepare("SELECT version,json_extract(plan_json,?) day_json,json_extract(plan_json,'$.depotPreview') root_preview FROM week_plans WHERE monday=?").bind(path,mondayKey).first();
+ if(!row)return null;
+ const day=parseJsonCell(row.day_json,null);
+ if(!day)throw new Error("Der angefragte Tag ist im gespeicherten Dienstplan nicht vorhanden.");
+ const minimalPlan={version:Number(row.version||0),depotPreview:!!row.root_preview,days:{[date]:day}};
+ return openOmsiDepotDayPayloadV6425(minimalPlan,date,env);
+}
+
 async function openOmsiDepotDayPayloadV6425(plan,date,env,ensurePlanning=false){
  if(ensurePlanning)plan=await ensureDepotPlanState(env,plan);
  const day=plan?.days?.[date];
@@ -1584,7 +1605,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
    p==="/api/admin/personnel-movements";
  if(needsEmployeeHydration)
    try{await hydrateEmployees(env)}catch(e){console.error("Mitarbeiterdaten konnten nicht geladen werden:",e?.message||e)}
- if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),payload=await openOmsiDayPayloadLiteV6470(env,mk,date);if(!payload)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);return json(payload,200,{"cache-control":"no-store"})}
+ if(p==="/api/openomsi/day"&&req.method==="GET"){let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);let mk=dateKey(mondayOf(parseDateKey(date))),payload=await openOmsiDayPayloadProjectedV6480(env,mk,date);if(!payload)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);return json(payload,200,{"cache-control":"no-store"})}
  if(p==="/api/openomsi/depot-slots"){
    if(req.method==="POST"){
      if(!await depotSyncAuthorizeOrPair(req,env))return json({error:"Depot-Verbindung konnte nicht authentifiziert werden. Control Centre koppelt automatisch neu."},401);
@@ -1610,9 +1631,9 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
  }
  if(p==="/api/openomsi/depot-day"&&req.method==="GET"){
    let date=String(url.searchParams.get("date")||berlinDateKey());if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum. Erwartet wird YYYY-MM-DD."},400);
-   let mk=dateKey(mondayOf(parseDateKey(date))),plan=await loadExistingWeek(env,mk);
-   if(!plan)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);
-   return json(await openOmsiDepotDayPayloadV6425(plan,date,env),200,{"cache-control":"no-store"});
+   let mk=dateKey(mondayOf(parseDateKey(date))),payload=await openOmsiDepotDayPayloadProjectedV6480(env,mk,date);
+   if(!payload)return json({error:"Für diese Woche existiert noch kein aktiver Dienstplan."},404);
+   return json(payload,200,{"cache-control":"no-store"});
  }
  if(p==="/api/login"&&req.method==="POST"){let b=await req.json(),username=String(b.username||"").trim().toLowerCase(),u=await getOrCreateUser(username,env);if(!u)return json({error:"Benutzer nicht gefunden. Benutzername: vorname.nachname"},401);if(await pwHash(String(b.password||""),u.salt)!==u.password_hash)return json({error:"Passwort nicht korrekt."},401);let emp=EMP_BY_ID.get(u.employee_id);if(!emp)return json({error:"Mitarbeiterkonto ist nicht mehr vorhanden."},403);let ls=employeeLifecycleStatus(emp,new Date());if(ls==="future")return json({error:`Arbeitsbeginn ist erst am ${emp.startDate}.`},403);if(ls==="left")return json({error:"Das Beschäftigungsverhältnis ist beendet."},403);let tok=randomToken(32),now=new Date(),exp=new Date(now.getTime()+1000*60*60*24*14);await env.DB.prepare(`INSERT INTO sessions(token,username,expires_at,created_at) VALUES(?,?,?,?)`).bind(tok,username,exp.toISOString(),now.toISOString()).run();return json({user:{id:emp.id,name:emp.name,username,role:u.role,position:emp.position},mustChange:!!u.must_change},200,{"set-cookie":`rogis_session=${encodeURIComponent(tok)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=1209600`})}
  if(p==="/api/logout"&&req.method==="POST"){let tok=cookieToken(req);if(tok)await env.DB.prepare(`DELETE FROM sessions WHERE token=?`).bind(tok).run();return json({ok:true},200,{"set-cookie":"rogis_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"})}
@@ -1649,7 +1670,7 @@ async function route(req,env){let url=new URL(req.url),p=url.pathname;
    catch(e){return json({error:e?.message||String(e)},400)}
  }
  if(p==="/api/admin/vehicle-day"){let date=String(url.searchParams.get("date")||"");if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return json({error:"Ungültiges Datum."},400);let q=url.searchParams.get("q")||"",offset=Number(url.searchParams.get("offset")||0),limit=Number(url.searchParams.get("limit")||60),mk=dateKey(mondayOf(parseDateKey(date))),result=await vehicleDayRowsLite(env,mk,date,q,offset,limit);if(!result)return json({error:"Für diese Woche wurde noch kein Dienstplan erzeugt."},404);return json(result,200,{"cache-control":"no-store"})}
- if(p==="/api/admin/summary"){let mk=url.searchParams.get("monday"),plan=await loadExistingWeek(env,mk),o=await env.DB.prepare(`SELECT COUNT(*) c FROM objections WHERE status='offen'`).first();let today=new Date(),active=DATA.employees.filter(e=>employeeActiveOn(e,today));return json({staff:active.length,drivers:active.filter(e=>e.bereich==="Fahrdienst").length,openObjections:o?.c||0,version:Number(plan?.version||0)})}
+ if(p==="/api/admin/summary"){let mk=String(url.searchParams.get("monday")||dateKey(mondayOf(new Date()))),[plan,o]=await Promise.all([env.DB.prepare(`SELECT version FROM week_plans WHERE monday=?`).bind(mk).first(),env.DB.prepare(`SELECT COUNT(*) c FROM objections WHERE status='offen'`).first()]);let today=new Date(),active=DATA.employees.filter(e=>employeeActiveOn(e,today));return json({staff:active.length,drivers:active.filter(e=>e.bereich==="Fahrdienst").length,openObjections:o?.c||0,version:Number(plan?.version||0)})}
  if(p==="/api/admin/objections"){let r=await env.DB.prepare(`SELECT * FROM objections WHERE status IN ('offen','info') ORDER BY CASE WHEN status='info' THEN 0 ELSE 1 END, created_at ASC LIMIT 200`).all();return json({items:r.results||[]})}
  if(p.startsWith("/api/admin/vacation-request/")&&p.endsWith("/approve")&&req.method==="POST"){
    let parts=p.split("/"),id=Number(parts[4]);
