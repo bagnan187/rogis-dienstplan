@@ -215,7 +215,7 @@ function reserveAcceptedIds(d,day,cfg=DEFAULT_GENERATION_SETTINGS){
  let ids=new Set(accepted.map(x=>x.employeeId));RESERVE_SELECTION_CACHE.set(day,{key,ids});return ids;
 }
 function reserveIsAccepted(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){return reserveAcceptedIds(d,day,cfg).has(emp.id)}
-function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){if(isEmployeeDutyInProgress(day,emp.id))return{status:"In Bearbeitung",dutyType:"In Bearbeitung",depot:"",serviceTime:"",segments:[],note:"Dienst entfernt · Neugenerierung ausstehend."};let ls=employeeLifecycleStatus(emp,d);if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};if(louisOnboardingActive(emp,d))return louisOnboardingStatus(d);let segs=(day.assignments[emp.id]||[]).sort((a,b)=>a.start-b.start),ay=apprenticeshipYearForDate(emp,d),dow0=d.getUTCDay(),weekend0=dow0===0||dow0===6;
+function statusForEmployee(emp,d,day,cfg=DEFAULT_GENERATION_SETTINGS){let ls=employeeLifecycleStatus(emp,d);if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};if(louisOnboardingActive(emp,d))return louisOnboardingStatus(d);if(isEmployeeDutyInProgress(day,emp.id))return{status:"In Bearbeitung",dutyType:"In Bearbeitung",depot:"",serviceTime:"",segments:[],note:"Dienst entfernt · Neugenerierung ausstehend."};let segs=(day.assignments[emp.id]||[]).sort((a,b)=>a.start-b.start),ay=apprenticeshipYearForDate(emp,d),dow0=d.getUTCDay(),weekend0=dow0===0||dow0===6;
  if((ay===1||ay===2)&&segs.length&&segs.every(x=>x.trainingRide)){
    let st=segs[0].start,en=Math.max(...segs.map(x=>x.end)),mentor=segs[0].mentorName||"Busfahrer",depot=depotFrom(emp,segs);
    let duty=ay===1?"1. Lehrjahr · Bereichsrotation Fahrdienst / Mitfahrt":"2. Lehrjahr · Begleitfahrt Klasse D";
@@ -1018,10 +1018,11 @@ function applyOverride(base,ov){if(!ov)return base;let kind=ov.kind||"Individuel
 async function overrideMap(env,startDate,endDate,employeeId=null){let sql=`SELECT * FROM duty_overrides WHERE duty_date>=? AND duty_date<=?`,args=[startDate,endDate];if(employeeId){sql+=` AND employee_id=?`;args.push(employeeId)}let r=await env.DB.prepare(sql).bind(...args).all(),m=new Map();for(const x of r.results||[]){m.set(`${x.employee_id}|${x.duty_date}`,x)}return m}
 async function userWeek(plan,emp,env){let days=[],start=plan.monday,end=dateKey(addDays(parseDateKey(plan.monday),6)),ovs=await overrideMap(env,start,end,emp.id);for(let i=0;i<7;i++){let d=addDays(parseDateKey(plan.monday),i),key=dateKey(d),st=statusForEmployee(emp,d,plan.days[key],planCfgForEmployee(plan,emp.id,d)),ov=ovs.get(`${emp.id}|${key}`);days.push({date:key,...normalizeStopNames(applyOverride(st,ov))})}return{monday:plan.monday,version:plan.version,generatedAt:plan.generatedAt,days}}
 function parseJsonCell(v,fallback){if(v===null||v===undefined||v==="")return fallback;if(typeof v!=="string")return v;try{return JSON.parse(v)}catch{return fallback}}
-function liteStatusForEmployee(emp,d,segs,cfg=DEFAULT_GENERATION_SETTINGS,inProgress=false){if(inProgress&&!(segs||[]).length)return{status:"In Bearbeitung",dutyType:"In Bearbeitung",depot:"",serviceTime:"",segments:[],note:"Dienst entfernt · Neugenerierung ausstehend."};
+function liteStatusForEmployee(emp,d,segs,cfg=DEFAULT_GENERATION_SETTINGS,inProgress=false){
  let ls=employeeLifecycleStatus(emp,d);
  if(ls==="future")return{status:"Noch nicht im Unternehmen",dutyType:`Eintritt ${emp.startDate}`,depot:"",serviceTime:"",segments:[]};
  if(ls==="left")return{status:"Ausgeschieden",dutyType:emp.endReason||"Beschäftigung beendet",depot:"",serviceTime:"",segments:[]};
+ if(inProgress&&!(segs||[]).length)return{status:"In Bearbeitung",dutyType:"In Bearbeitung",depot:"",serviceTime:"",segments:[],note:"Dienst entfernt · Neugenerierung ausstehend."};
  segs=[...(segs||[])].sort((a,b)=>a.start-b.start);
  let day={assignments:{[emp.id]:segs}},ay=apprenticeshipYearForDate(emp,d);
  
