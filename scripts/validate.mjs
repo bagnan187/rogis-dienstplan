@@ -96,8 +96,25 @@ if (!html.includes("replace(/'/g,'%27')")) {
   console.error('Fehlender UI-Fix: Fahrzeugmodelle mit Apostroph (z.B. Lion\'s City) müssen anklickbar bleiben');
   process.exit(1);
 }
-if (!html.includes('Der aktuell vorhandene Dienst ist bereits eingetragen') || !html.includes('<option>Fahrdienst</option>')) {
-  console.error('Fehlender UI-Fix: Bearbeiten muss den vorhandenen Dienst vorbefüllen');
+if (!html.includes('async function editDuty(')) {
+  console.error('Fehlende Bearbeiten-Funktion für den Dienstplan.');
+  process.exit(1);
+}
+for (const [needle, label] of [
+  ['id="edKind" maxlength="80"', 'freie Eingabe der Dienstart'],
+  ['id="edType" maxlength="160"', 'freie Eingabe der Tätigkeit'],
+  ['id="edDepot" maxlength="180"', 'freies Eingabefeld für Einsatzort'],
+  ['id="edNote" rows="6"', 'mehrzeiliger frei formulierbarer Dienstablauf'],
+  ["$('#edType').value=v.duty_type||''", 'Vorbefüllung des aktuellen Dienstes'],
+  ["'/api/admin/manual-duty'", 'Speichern via sicherer manueller Neuvergabe']
+]) {
+  if (!html.includes(needle)) {
+    console.error('Fehlender manueller Diensteditor:', label);
+    process.exit(1);
+  }
+}
+if (html.includes('<select id="edKind"')) {
+  console.error('Die Dienstart darf keine feste Auswahlliste enthalten.');
   process.exit(1);
 }
 
