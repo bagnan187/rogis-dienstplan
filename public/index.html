@@ -181,8 +181,9 @@ async function loadAdminDay(){
      let j=await api('/api/admin/day?date='+date+'&q='+encodeURIComponent(q)+'&offset='+offset+'&limit=40',{signal:ctl.signal});
      if(ctl.signal.aborted)return;
      rows.push(...(j.rows||[]));
-     $('#dayBody').innerHTML=rows.map(r=>`<tr><td><b>${r.name}</b><div class="small">${r.id}${r.manual?' · manuell':''}</div></td><td>${escapeDutyHtml(r.dutyType)}</td><td>${escapeDutyHtml(r.depot||'—')}</td><td>${escapeDutyHtml(r.serviceTime||'—')}</td><td style="white-space:pre-wrap">${escapeDutyHtml(r.summary||r.note||'—')}</td><td>${escapeDutyHtml(r.status)}</td><td><button class="btn light" onclick="editDuty('${r.id}','${r.name.replace(/'/g,"\'")}','${date}')">Bearbeiten</button>${r.canRemove?removeDutyButton(r,date):""}</td></tr>`).join('');
-     $$('#dayBody button[data-remove-id]').forEach(btn=>btn.onclick=()=>removeDuty(btn.dataset.removeId,btn.dataset.removeDate));
+     $('#dayBody').innerHTML=rows.map(r=>`<tr><td><b>${r.name}</b><div class="small">${r.id}${r.manual?' · manuell':''}</div></td><td>${escapeDutyHtml(r.dutyType)}</td><td>${escapeDutyHtml(r.depot||'—')}</td><td>${escapeDutyHtml(r.serviceTime||'—')}</td><td style="white-space:pre-wrap">${escapeDutyHtml(r.summary||r.note||'—')}</td><td>${escapeDutyHtml(r.status)}</td><td><button class="btn light" data-edit-id="${escapeDutyHtml(r.id)}" data-edit-name="${encodeURIComponent(r.name)}" data-edit-date="${date}">Bearbeiten</button>${r.canRemove?removeDutyButton(r,date):""}</td></tr>`).join('');
+     $(`#dayBody button[data-edit-id]`).forEach(btn=>btn.onclick=()=>editDuty(btn.dataset.editId,decodeURIComponent(btn.dataset.editName),btn.dataset.editDate));
+     $('#dayBody button[data-remove-id]').forEach(btn=>btn.onclick=()=>removeDuty(btn.dataset.removeId,btn.dataset.removeDate));
      if(j.nextOffset===null||j.nextOffset===undefined)break;offset=Number(j.nextOffset);
    }
  }catch(e){if(e?.name!=='AbortError')$('#dayBody').innerHTML=`<tr><td colspan="7" class="small">${e.message}</td></tr>`}
