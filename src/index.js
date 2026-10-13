@@ -988,7 +988,7 @@ async function createPlanDraft(env,mondayKey,by="system"){
 async function saveFreeformDutyWithReassignment(env,raw,by){
  const eid=String(raw.employeeId||""),date=String(raw.date||"");
  const employee=EMP_BY_ID.get(eid);
- if(!employee||! /^\d{4}-\d{2}-\d{2}$/.test(date))throw new Error("Mitarbeiter oder Datum ungültig.");
+ if(!employee||!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new Error("Mitarbeiter oder Datum ungültig.");
  const dutyType=String(raw.dutyType||"").trim().slice(0,160);
  const kind=String(raw.kind||"Individueller Dienst").trim().slice(0,80)||"Individueller Dienst";
  const depot=String(raw.depot||"").trim().slice(0,180);
@@ -998,9 +998,8 @@ async function saveFreeformDutyWithReassignment(env,raw,by){
  if((start&&!end)||(!start&&end))throw new Error("Beginn und Ende bitte beide eintragen oder beide leer lassen.");
  for(const tm of [start,end])if(tm&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(tm))throw new Error("Ungültige Uhrzeit.");
  const mk=dateKey(mondayOf(parseDateKey(date))),dd=parseDateKey(date);
- const [row,priorOverride,dayOverrides]=await Promise.all([
+ const [row,dayOverrides]=await Promise.all([
   env.DB.prepare("SELECT version,plan_json FROM week_plans WHERE monday=?").bind(mk).first(),
-  env.DB.prepare("SELECT kind FROM duty_overrides WHERE employee_id=? AND duty_date=?").bind(eid,date).first(),
   env.DB.prepare("SELECT employee_id FROM duty_overrides WHERE duty_date=?").bind(date).all()
  ]);
  if(!row)throw new Error("Bitte zuerst den Wochenplan erzeugen.");
@@ -1009,12 +1008,12 @@ async function saveFreeformDutyWithReassignment(env,raw,by){
  if(!employeeActiveOn(employee,dd))throw new Error("Die Person ist an diesem Tag nicht beschäftigt.");
  if(kind==="Urlaub"){
   const cap=await vacationCapacityForRange(env,eid,date,date);
-  if(!cap.ok&&!priorOverride)throw new Error(cap.error);
+  if(!cap.ok)throw new Error(cap.error);
  }
  if(kind==="Reserve"){
   const rd=depot||"Betriebshof Mitte",st=start||"06:00",en=end||"13:00";
   const conflict=await reserveOverrideConflict(env,eid,date,rd,st,en);
-  if(conflict&&!priorOverride)throw new Error(conflict.message);
+  if(conflict)throw new Error(conflict.message);
  }
  const blocked=new Set((dayOverrides.results||[]).map(r=>String(r.employee_id)));
  let handover=null;
