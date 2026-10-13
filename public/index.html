@@ -307,6 +307,10 @@ async function editDuty(employeeId,name,date){
  if(j.canRemove)$('#edRemoveDuty').onclick=()=>removeDuty(employeeId,date);
  $('#edSave').onclick=async()=>{
   const btn=$('#edSave'),msg=$('#edMsg');
+  const oldFields=[v.kind||'Individueller Dienst',v.duty_type||'',v.depot||'',v.start_time||'',v.end_time||'',v.note||''];
+  const newFields=[$('#edKind').value,$('#edType').value,$('#edDepot').value,$('#edStart').value,$('#edEnd').value,$('#edNote').value];
+  if(newFields.every((value,index)=>value===oldFields[index])){msg.textContent='Bitte zuerst eine Angabe ändern.';return}
+  if(c.summary&&!confirm('Der bisherige Fahrerdienst wird vollständig an eine verfügbare Bereitschaftskraft übergeben. Du erhältst stattdessen den hier eingetragenen manuellen Dienst. Fortfahren?'))return;
   btn.disabled=true;msg.textContent='Manueller Dienst wird gespeichert und ggf. neu vergeben …';
   try{
    const response=await api('/api/admin/manual-duty',{method:'POST',body:JSON.stringify({
