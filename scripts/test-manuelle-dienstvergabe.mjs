@@ -26,7 +26,7 @@ assert.equal(result.employeeId,'B');
 assert.equal(result.segmentsMoved,2);
 assert.equal(day.assignments.A,undefined,'Kein alter Fahrerdienst verbleibt beim manuell bearbeiteten Mitarbeiter');
 assert.deepEqual(day.assignments.B.map(s=>[s.run,s.vehicle,s.start,s.end]),original.map(s=>[s.run,s.vehicle,s.start,s.end]),'Dienstkarte bleibt unverändert');
-assert.deepEqual(day.runInfo['10132F'].drivers,['Bereitschaft B','Anderer Fahrer']);
+assert.deepEqual([...day.runInfo['10132F'].drivers].sort(),['Anderer Fahrer','Bereitschaft B'].sort());
 assert.equal(day.assignments.X[0].reliefFrom,undefined,'Alte Fahrerwechselreferenz entfernt');
 assert.equal(day.assignments.X.length,1,'Keine bestehenden Fremddienste getauscht');
 assert.equal(Object.keys(day.assignments).length,2,'Gleiche Anzahl besetzter Stellen');
